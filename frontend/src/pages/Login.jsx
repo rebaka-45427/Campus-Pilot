@@ -23,7 +23,7 @@ export default function Login() {
       params.append('username', formData.username);
       params.append('password', formData.password);
 
-      const res = await axios.post('http://localhost:8000/token', params, {
+      const res = await axios.post('https://campus-pilot.onrender.com/token', params, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
         }
