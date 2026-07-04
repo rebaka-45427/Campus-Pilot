@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Trash2, Edit2, CheckSquare, Clock } from 'lucide-react';
+import { Plus, Search, Trash2, Edit2, CheckSquare, Clock, Timer } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
@@ -20,6 +20,7 @@ export default function Tasks() {
     category: 'Study',
     priority: 'Medium',
     deadline: '',
+    estimated_time: '',
     notes: ''
   });
 
@@ -66,11 +67,12 @@ export default function Tasks() {
         category: task.category,
         priority: task.priority,
         deadline: task.deadline ? new Date(task.deadline).toISOString().slice(0, 16) : '',
+        estimated_time: task.estimated_time || '',
         notes: task.notes || ''
       });
     } else {
       setEditingTask(null);
-      setFormData({ title: '', category: 'Study', priority: 'Medium', deadline: '', notes: '' });
+      setFormData({ title: '', category: 'Study', priority: 'Medium', deadline: '', estimated_time: '', notes: '' });
     }
     setIsModalOpen(true);
   };
@@ -185,6 +187,17 @@ export default function Tasks() {
                         {format(new Date(task.deadline), 'MMM d, h:mm a')}
                       </span>
                     )}
+                    {task.estimated_time && (
+                      <span className="flex items-center text-gray-500">
+                        <Timer size={14} className="mr-1" />
+                        {task.estimated_time}
+                      </span>
+                    )}
+                    {task.completed_at && task.status === 'completed' && (
+                      <span className="flex items-center text-success font-medium text-xs">
+                        Completed: {format(new Date(task.completed_at), 'MMM d, h:mm a')}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -221,9 +234,15 @@ export default function Tasks() {
               </select>
             </div>
           </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Due Date</label>
-            <input type="datetime-local" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} className="w-full px-4 py-2 border rounded-xl" />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Due Date</label>
+              <input type="datetime-local" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} className="w-full px-4 py-2 border rounded-xl" />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Estimated Time</label>
+              <input type="text" placeholder="e.g. 2 hours" value={formData.estimated_time} onChange={e => setFormData({...formData, estimated_time: e.target.value})} className="w-full px-4 py-2 border rounded-xl" />
+            </div>
           </div>
           <Button type="submit" className="w-full">{editingTask ? 'Save Changes' : 'Create Task'}</Button>
         </form>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserCircle, Mail, School, Building, Calendar, Lock, LogOut } from 'lucide-react';
+import { UserCircle, Mail, School, Building, Calendar, Lock, LogOut, CheckCircle, BookOpen, GraduationCap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
@@ -22,14 +22,29 @@ export default function Profile() {
     confirmPassword: ''
   });
 
+  const [stats, setStats] = useState({
+    completedTasks: 0,
+    attendanceRate: 0,
+    productivityScore: 0
+  });
+
   useEffect(() => {
     fetchProfile();
   }, []);
 
   const fetchProfile = async () => {
     try {
-      const res = await api.get('/users/me');
-      setUser(res.data);
+      const [userRes, analyticsRes] = await Promise.all([
+        api.get('/users/me'),
+        api.get('/analytics')
+      ]);
+      setUser(userRes.data);
+      const data = analyticsRes.data.stats;
+      setStats({
+        completedTasks: data.completedTasks,
+        attendanceRate: data.attendanceRate,
+        productivityScore: data.productivityScore
+      });
     } catch (error) {
       toast.error('Failed to load profile');
     }
@@ -76,7 +91,22 @@ export default function Profile() {
             </div>
             <h3 className="text-xl font-bold text-gray-900">{user.username}</h3>
             <p className="text-gray-500 text-sm mt-1">{user.email || 'No email set'}</p>
-            <Badge variant="primary" className="mt-4">Admin User</Badge>
+            <Badge variant="primary" className="mt-4">Member</Badge>
+
+            <div className="w-full mt-6 space-y-3 pt-6 border-t border-primary/10 text-left">
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-500 flex items-center"><CheckCircle size={16} className="mr-2 text-success" /> Tasks Done</span>
+                <span className="font-bold text-gray-900">{stats.completedTasks}</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-500 flex items-center"><GraduationCap size={16} className="mr-2 text-primary" /> Attendance</span>
+                <span className="font-bold text-gray-900">{stats.attendanceRate}%</span>
+              </div>
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-gray-500 flex items-center"><BookOpen size={16} className="mr-2 text-warning" /> Prod. Score</span>
+                <span className="font-bold text-gray-900">{stats.productivityScore}%</span>
+              </div>
+            </div>
           </Card>
           
           <Button variant="danger" className="w-full" onClick={handleLogout}>

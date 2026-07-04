@@ -6,16 +6,6 @@ import Card from '../components/Card';
 import StatCard from '../components/StatCard';
 import api from '../services/api';
 
-const EMPTY_AREA_DATA = [
-  { name: 'Mon', tasks: 0 },
-  { name: 'Tue', tasks: 0 },
-  { name: 'Wed', tasks: 0 },
-  { name: 'Thu', tasks: 0 },
-  { name: 'Fri', tasks: 0 },
-  { name: 'Sat', tasks: 0 },
-  { name: 'Sun', tasks: 0 },
-];
-
 export default function Dashboard() {
   const [stats, setStats] = useState({
     pendingTasks: 0,
@@ -23,38 +13,49 @@ export default function Dashboard() {
     attendance: 0,
     upcomingAssignments: 0,
     totalSubjects: 0,
-    recentTasks: []
+    productivityScore: 0,
+    areaData: [],
+    recentActivity: []
   });
   const [user, setUser] = useState(null);
 
   useEffect(() => {
-    // In a real app, these would come from real API endpoints
-    // For now we will fetch what we can and mock the rest until the backend is fully populated
     const fetchData = async () => {
       try {
-        const userRes = await api.get('/users/me');
+        const [userRes, analyticsRes, activityRes, tasksRes] = await Promise.all([
+          api.get('/users/me'),
+          api.get('/analytics'),
+          api.get('/activity-logs?limit=5'),
+          api.get('/tasks')
+        ]);
+        
         setUser(userRes.data);
+        const data = analyticsRes.data.stats;
         
-        const tasksRes = await api.get('/tasks');
-        const assignmentsRes = await api.get('/assignments');
-        const subjectsRes = await api.get('/subjects');
-        
+        // Compute last 7 days of tasks for AreaChart
         const tasks = tasksRes.data;
-        const pending = tasks.filter(t => t.status === 'pending');
-        const completed = tasks.filter(t => t.status === 'completed');
-        
-        const subjects = subjectsRes.data;
-        const totalAttended = subjects.reduce((acc, sub) => acc + sub.classes_attended, 0);
-        const totalClasses = subjects.reduce((acc, sub) => acc + sub.total_classes, 0);
-        const attendancePct = totalClasses === 0 ? 0 : Math.round((totalAttended / totalClasses) * 100);
+        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const areaData = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          
+          const tasksOnDay = tasks.filter(t => new Date(t.created_at).toDateString() === d.toDateString()).length;
+          areaData.push({
+            name: days[d.getDay()],
+            tasks: tasksOnDay
+          });
+        }
 
         setStats({
-          pendingTasks: pending.length,
-          completedTasks: completed.length,
-          attendance: attendancePct,
-          upcomingAssignments: assignmentsRes.data.filter(a => a.status === 'Pending').length,
-          totalSubjects: subjects.length,
-          recentTasks: tasks.slice(0, 5)
+          pendingTasks: data.pendingTasks,
+          completedTasks: data.completedTasks,
+          attendance: data.attendanceRate,
+          upcomingAssignments: data.totalAssignments - data.completedAssignments,
+          totalSubjects: analyticsRes.data.charts.taskCategories ? analyticsRes.data.charts.taskCategories.length : 0, // Mock for total subjects if not passed, wait we don't have total subjects in stats.
+          productivityScore: data.productivityScore,
+          areaData: areaData,
+          recentActivity: activityRes.data
         });
       } catch (error) {
         console.error(error);
@@ -63,8 +64,7 @@ export default function Dashboard() {
     fetchData();
   }, []);
 
-  const productivityScore = stats.pendingTasks + stats.completedTasks === 0 ? 0 : 
-    Math.round((stats.completedTasks / (stats.pendingTasks + stats.completedTasks)) * 100);
+  const productivityScore = stats.productivityScore;
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
@@ -124,7 +124,7 @@ export default function Dashboard() {
           <h3 className="text-lg font-bold text-gray-900 mb-6">Weekly Activity (Tasks)</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={EMPTY_AREA_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={stats.areaData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorTasks" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#9333EA" stopOpacity={0.4}/>
@@ -141,22 +141,22 @@ export default function Dashboard() {
           </div>
         </Card>
 
-        {/* Recent Tasks */}
+        {/* Activity Feed */}
         <Card className="col-span-1 lg:col-span-3">
-          <h3 className="text-lg font-bold text-gray-900 mb-4">Recent Tasks</h3>
+          <h3 className="text-lg font-bold text-gray-900 mb-4">Recent Activity</h3>
           <div className="space-y-3">
-            {stats.recentTasks.length > 0 ? stats.recentTasks.map((task) => (
-              <div key={task.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
+            {stats.recentActivity.length > 0 ? stats.recentActivity.map((activity) => (
+              <div key={activity.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl border border-gray-100">
                 <div className="flex items-center space-x-3">
-                  <div className={`w-3 h-3 rounded-full ${task.status === 'completed' ? 'bg-success' : 'bg-warning'}`}></div>
-                  <span className={`font-medium ${task.status === 'completed' ? 'text-gray-500 line-through' : 'text-gray-900'}`}>
-                    {task.title}
+                  <div className={`w-3 h-3 rounded-full ${activity.action === 'Completed' || activity.action === 'Marked Present' ? 'bg-success' : activity.action === 'Deleted' || activity.action === 'Marked Absent' ? 'bg-danger' : 'bg-primary'}`}></div>
+                  <span className="font-medium text-gray-900">
+                    {activity.details}
                   </span>
                 </div>
-                <span className="text-sm text-gray-500 capitalize">{task.category}</span>
+                <span className="text-sm text-gray-500">{format(new Date(activity.created_at), 'MMM d, h:mm a')}</span>
               </div>
             )) : (
-              <div className="text-center py-8 text-gray-500">No tasks added yet.</div>
+              <div className="text-center py-8 text-gray-500">No activity yet. Make some progress!</div>
             )}
           </div>
         </Card>

@@ -10,27 +10,11 @@ import api from '../services/api';
 
 const COLORS = ['#9333EA', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
 
-const EMPTY_BAR_DATA = [
-  { name: 'Jan', completed: 0, missed: 0 },
-  { name: 'Feb', completed: 0, missed: 0 },
-  { name: 'Mar', completed: 0, missed: 0 },
-  { name: 'Apr', completed: 0, missed: 0 },
-  { name: 'May', completed: 0, missed: 0 },
-  { name: 'Jun', completed: 0, missed: 0 },
-];
-
-const EMPTY_LINE_DATA = [
-  { month: 'Jan', attendance: 0 },
-  { month: 'Feb', attendance: 0 },
-  { month: 'Mar', attendance: 0 },
-  { month: 'Apr', attendance: 0 },
-  { month: 'May', attendance: 0 },
-  { month: 'Jun', attendance: 0 },
-];
-
 export default function Analytics() {
   const [stats, setStats] = useState({
     pieData: [],
+    assignmentPie: [],
+    barData: [],
     totalTasks: 0,
     completionRate: 0,
     assignmentsRate: 0,
@@ -40,39 +24,41 @@ export default function Analytics() {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
-        const [tasksRes, assignmentsRes, subjectsRes] = await Promise.all([
-          api.get('/tasks'),
-          api.get('/assignments'),
-          api.get('/subjects')
+        const [analyticsRes, tasksRes] = await Promise.all([
+          api.get('/analytics'),
+          api.get('/tasks')
         ]);
         
+        const data = analyticsRes.data;
         const tasks = tasksRes.data;
-        const assignments = assignmentsRes.data;
-        const subjects = subjectsRes.data;
 
-        // Calculate Category distribution for Pie Chart
-        const categories = {};
-        tasks.forEach(t => {
-          categories[t.category] = (categories[t.category] || 0) + 1;
-        });
-        const pieData = Object.keys(categories).map(key => ({ name: key, value: categories[key] }));
-
-        const completedTasks = tasks.filter(t => t.status === 'completed').length;
-        const completionRate = tasks.length ? Math.round((completedTasks / tasks.length) * 100) : 0;
-
-        const completedAsg = assignments.filter(a => a.status === 'Completed').length;
-        const asgRate = assignments.length ? Math.round((completedAsg / assignments.length) * 100) : 0;
-
-        const totalClasses = subjects.reduce((sum, s) => sum + s.total_classes, 0);
-        const totalAttended = subjects.reduce((sum, s) => sum + s.classes_attended, 0);
-        const attendanceRate = totalClasses ? Math.round((totalAttended / totalClasses) * 100) : 0;
+        // Process Task History for Bar Chart (Last 6 months)
+        const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const currentMonth = new Date().getMonth();
+        const barData = [];
+        for (let i = 5; i >= 0; i--) {
+          let m = currentMonth - i;
+          if (m < 0) m += 12;
+          
+          const tasksInMonth = tasks.filter(t => new Date(t.created_at).getMonth() === m);
+          const completed = tasksInMonth.filter(t => t.status === 'completed').length;
+          const pending = tasksInMonth.length - completed;
+          
+          barData.push({
+            name: monthNames[m],
+            completed: completed,
+            missed: pending
+          });
+        }
 
         setStats({
-          pieData: pieData.length > 0 ? pieData : [{ name: 'No Data', value: 1 }],
-          totalTasks: tasks.length,
-          completionRate,
-          assignmentsRate: asgRate,
-          attendanceRate
+          pieData: data.charts.taskCategories,
+          assignmentPie: data.charts.assignmentStatus,
+          barData: barData,
+          totalTasks: data.stats.totalTasks,
+          completionRate: data.stats.completionRate,
+          assignmentsRate: data.stats.assignmentsRate,
+          attendanceRate: data.stats.attendanceRate
         });
       } catch (error) {
         console.error(error);
@@ -103,7 +89,7 @@ export default function Analytics() {
           <h3 className="text-lg font-bold text-gray-900 mb-6">Task Completion History</h3>
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={EMPTY_BAR_DATA} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <BarChart data={stats.barData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#6B7280'}} />
                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#6B7280'}} />
@@ -113,7 +99,7 @@ export default function Analytics() {
                 />
                 <Legend />
                 <Bar dataKey="completed" name="Completed" stackId="a" fill="#9333EA" radius={[0, 0, 4, 4]} barSize={32} />
-                <Bar dataKey="missed" name="Missed" stackId="a" fill="#EF4444" radius={[4, 4, 0, 0]} barSize={32} />
+                <Bar dataKey="missed" name="Pending" stackId="a" fill="#EF4444" radius={[4, 4, 0, 0]} barSize={32} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -148,20 +134,32 @@ export default function Analytics() {
           </div>
         </Card>
 
-        {/* Attendance Trend (Line) */}
+        {/* Assignment Status (Donut) */}
         <Card className="col-span-1 lg:col-span-2">
-          <h3 className="text-lg font-bold text-gray-900 mb-6">Attendance Trend (%)</h3>
-          <div className="h-72">
+          <h3 className="text-lg font-bold text-gray-900 mb-6">Assignment Completion Status</h3>
+          <div className="h-72 flex items-center justify-center">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={EMPTY_LINE_DATA} margin={{ top: 10, right: 30, left: -20, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#6B7280'}} />
-                <YAxis domain={['dataMin - 5', 100]} axisLine={false} tickLine={false} tick={{fill: '#6B7280'}} />
+              <PieChart>
+                <Pie
+                  data={stats.assignmentPie}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={80}
+                  outerRadius={110}
+                  paddingAngle={5}
+                  dataKey="value"
+                  stroke="none"
+                >
+                  {stats.assignmentPie.map((entry, index) => {
+                    const colors = { 'Completed': '#10B981', 'Pending': '#F59E0B', 'Overdue': '#EF4444', 'No Data': '#E5E7EB' };
+                    return <Cell key={`cell-${index}`} fill={colors[entry.name] || '#9333EA'} />;
+                  })}
+                </Pie>
                 <Tooltip 
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.1)' }}
                 />
-                <Line type="monotone" dataKey="attendance" name="Attendance %" stroke="#10B981" strokeWidth={4} dot={{ r: 6, fill: '#10B981', strokeWidth: 0 }} activeDot={{ r: 8, strokeWidth: 0 }} />
-              </LineChart>
+                <Legend verticalAlign="bottom" height={36} iconType="circle" />
+              </PieChart>
             </ResponsiveContainer>
           </div>
         </Card>

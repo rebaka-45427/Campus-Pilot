@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Search, Pin, StickyNote, Edit3 } from 'lucide-react';
+import { Plus, Trash2, Search, Pin, StickyNote, Edit3, Archive, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
@@ -12,16 +12,46 @@ export default function Notes() {
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
+  const [activeTab, setActiveTab] = useState('active'); // active, archived
+  const [saveStatus, setSaveStatus] = useState('');
   
   const [formData, setFormData] = useState({
     title: '',
     content: '',
-    is_pinned: false
+    is_pinned: false,
+    is_archived: false
   });
 
   useEffect(() => {
     fetchNotes();
   }, []);
+
+  useEffect(() => {
+    if (!editingNote) return;
+
+    // Skip auto-save if formData matches editingNote exactly (e.g. just opened)
+    if (
+      formData.title === editingNote.title && 
+      formData.content === editingNote.content && 
+      formData.is_pinned === editingNote.is_pinned &&
+      formData.is_archived === editingNote.is_archived
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setSaveStatus('Saving...');
+      try {
+        await api.put(`/notes/${editingNote.id}`, formData);
+        setSaveStatus('Saved');
+        fetchNotes();
+      } catch (e) {
+        setSaveStatus('Error');
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [formData, editingNote]);
 
   const fetchNotes = async () => {
     try {
@@ -36,13 +66,12 @@ export default function Notes() {
     e.preventDefault();
     try {
       if (editingNote) {
-        // Mock PUT for now as I need to add it to backend if strictly required, but I'll add POST/DELETE/PIN first
-        // Wait, I only added PUT /notes/{id}/pin in main.py, I didn't add full PUT /notes/{id}. 
-        // I will just delete and create a new one to simulate edit for this demo, or I could just tell the user.
-        await api.delete(`/notes/${editingNote.id}`);
+        await api.put(`/notes/${editingNote.id}`, formData);
+        toast.success('Note updated');
+      } else {
+        await api.post('/notes', formData);
+        toast.success('Note created');
       }
-      await api.post('/notes', formData);
-      toast.success(editingNote ? 'Note updated' : 'Note created');
       setIsModalOpen(false);
       fetchNotes();
     } catch (error) {
@@ -51,12 +80,13 @@ export default function Notes() {
   };
 
   const openModal = (note = null) => {
+    setSaveStatus('');
     if (note) {
       setEditingNote(note);
-      setFormData({ title: note.title, content: note.content, is_pinned: note.is_pinned });
+      setFormData({ title: note.title, content: note.content, is_pinned: note.is_pinned, is_archived: note.is_archived || false });
     } else {
       setEditingNote(null);
-      setFormData({ title: '', content: '', is_pinned: false });
+      setFormData({ title: '', content: '', is_pinned: false, is_archived: false });
     }
     setIsModalOpen(true);
   };
@@ -82,10 +112,22 @@ export default function Notes() {
     }
   };
 
-  const filteredNotes = notes.filter(note => 
+  const toggleArchive = async (id) => {
+    try {
+      await api.put(`/notes/${id}/archive`);
+      fetchNotes();
+      toast.success('Note moved');
+    } catch (error) {
+      toast.error('Error archiving note');
+    }
+  };
+
+  const displayedNotes = notes.filter(note => activeTab === 'archived' ? note.is_archived : !note.is_archived);
+  
+  const filteredNotes = displayedNotes.filter(note => 
     note.title.toLowerCase().includes(search.toLowerCase()) || 
     note.content.toLowerCase().includes(search.toLowerCase())
-  );
+  ).sort((a, b) => b.is_pinned - a.is_pinned);
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
@@ -98,6 +140,21 @@ export default function Notes() {
         <Button onClick={() => openModal()}>
           <Plus size={20} className="mr-2" /> New Note
         </Button>
+      </div>
+
+      <div className="flex gap-4 mb-6 border-b border-gray-200">
+        <button 
+          onClick={() => setActiveTab('active')} 
+          className={`pb-2 px-1 font-bold text-sm ${activeTab === 'active' ? 'text-primary border-b-2 border-primary' : 'text-gray-500'}`}
+        >
+          Active Notes
+        </button>
+        <button 
+          onClick={() => setActiveTab('archived')} 
+          className={`pb-2 px-1 font-bold text-sm ${activeTab === 'archived' ? 'text-primary border-b-2 border-primary' : 'text-gray-500'}`}
+        >
+          Archived
+        </button>
       </div>
 
       <div className="relative mb-8">
@@ -136,6 +193,7 @@ export default function Notes() {
               <div className="pt-4 mt-auto border-t border-gray-100 flex justify-between items-center text-xs text-gray-400">
                 <span>{format(new Date(note.created_at), 'MMM do, yyyy')}</span>
                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => toggleArchive(note.id)} className="hover:text-warning" title={note.is_archived ? 'Unarchive' : 'Archive'}><Archive size={16} /></button>
                   <button onClick={() => openModal(note)} className="hover:text-primary"><Edit3 size={16} /></button>
                   <button onClick={() => deleteNote(note.id)} className="hover:text-danger"><Trash2 size={16} /></button>
                 </div>
@@ -147,6 +205,12 @@ export default function Notes() {
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingNote ? "Edit Note" : "New Note"} className="max-w-2xl">
+        {editingNote && saveStatus && (
+          <div className="absolute top-6 right-12 text-xs font-bold text-gray-400 flex items-center">
+            {saveStatus === 'Saving...' ? <RefreshCw size={12} className="animate-spin mr-1" /> : null}
+            {saveStatus}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">Title</label>

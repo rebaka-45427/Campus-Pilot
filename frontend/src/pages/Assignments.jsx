@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, Edit2, Check } from 'lucide-react';
 import { format, differenceInDays, isPast } from 'date-fns';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
@@ -11,7 +11,8 @@ import api from '../services/api';
 export default function Assignments() {
   const [assignments, setAssignments] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [formData, setFormData] = useState({ subject: '', title: '', deadline: '' });
+  const [editingId, setEditingId] = useState(null);
+  const [formData, setFormData] = useState({ subject: '', title: '', description: '', priority: 'Medium', deadline: '' });
 
   useEffect(() => {
     fetchAssignments();
@@ -29,16 +30,45 @@ export default function Assignments() {
   const handleAdd = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/assignments', {
+      const payload = {
         ...formData,
         deadline: new Date(formData.deadline).toISOString(),
-        status: 'Pending'
-      });
-      toast.success('Assignment created');
+      };
+      
+      if (editingId) {
+        await api.put(`/assignments/${editingId}`, payload);
+        toast.success('Assignment updated');
+      } else {
+        await api.post('/assignments', { ...payload, status: 'Pending' });
+        toast.success('Assignment created');
+      }
       setIsModalOpen(false);
+      setEditingId(null);
       fetchAssignments();
     } catch (error) {
-      toast.error('Failed to create assignment');
+      toast.error(editingId ? 'Failed to update assignment' : 'Failed to create assignment');
+    }
+  };
+
+  const handleEdit = (assignment) => {
+    setFormData({
+      subject: assignment.subject,
+      title: assignment.title,
+      description: assignment.description || '',
+      priority: assignment.priority || 'Medium',
+      deadline: new Date(assignment.deadline).toISOString().slice(0, 16)
+    });
+    setEditingId(assignment.id);
+    setIsModalOpen(true);
+  };
+
+  const handleMarkComplete = async (id) => {
+    try {
+      await api.put(`/assignments/${id}`, { status: 'Completed' });
+      toast.success('Assignment marked as completed');
+      fetchAssignments();
+    } catch (error) {
+      toast.error('Failed to update assignment');
     }
   };
 
@@ -68,7 +98,7 @@ export default function Assignments() {
           <h2 className="text-2xl font-bold text-gray-900">Assignments</h2>
           <p className="text-gray-500 mt-1">Keep track of your deadlines.</p>
         </div>
-        <Button onClick={() => { setFormData({ subject: '', title: '', deadline: '' }); setIsModalOpen(true); }}>
+        <Button onClick={() => { setFormData({ subject: '', title: '', description: '', priority: 'Medium', deadline: '' }); setEditingId(null); setIsModalOpen(true); }}>
           <Plus size={20} className="mr-2" /> Add Assignment
         </Button>
       </div>
@@ -86,20 +116,29 @@ export default function Assignments() {
             const StatusIcon = statusInfo.icon;
 
             return (
-              <Card key={assignment.id} className="relative group overflow-hidden hover:border-primary/30">
+              <Card key={assignment.id} className={`relative group overflow-hidden ${statusInfo.text === 'Completed' ? 'opacity-70 grayscale' : 'hover:border-primary/30'}`}>
                 <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => handleDelete(assignment.id)} className="p-2 bg-gray-50 text-gray-400 hover:text-danger rounded-lg transition-colors">
+                  {statusInfo.text !== 'Completed' && (
+                    <button onClick={() => handleEdit(assignment)} className="p-2 bg-white border border-gray-100 text-gray-400 hover:text-primary shadow-sm rounded-lg transition-colors">
+                      <Edit2 size={16} />
+                    </button>
+                  )}
+                  <button onClick={() => handleDelete(assignment.id)} className="p-2 bg-white border border-gray-100 text-gray-400 hover:text-danger shadow-sm rounded-lg transition-colors">
                     <Trash2 size={16} />
                   </button>
                 </div>
 
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className="p-2.5 bg-primary/10 text-primary rounded-xl">
+                <div className="flex items-start space-x-3 mb-4">
+                  <div className="p-2.5 bg-primary/10 text-primary rounded-xl mt-1">
                     <BookOpen size={20} />
                   </div>
                   <div>
-                    <Badge variant="gray" className="mb-1">{assignment.subject}</Badge>
-                    <h3 className="font-bold text-gray-900 leading-tight pr-8">{assignment.title}</h3>
+                    <div className="flex space-x-2 mb-1">
+                      <Badge variant="gray">{assignment.subject}</Badge>
+                      <Badge variant={assignment.priority === 'High' ? 'danger' : assignment.priority === 'Medium' ? 'warning' : 'success'}>{assignment.priority}</Badge>
+                    </div>
+                    <h3 className="font-bold text-gray-900 leading-tight pr-16">{assignment.title}</h3>
+                    {assignment.description && <p className="text-sm text-gray-500 mt-1 line-clamp-2 pr-4">{assignment.description}</p>}
                   </div>
                 </div>
 
@@ -123,27 +162,47 @@ export default function Assignments() {
                     {daysLeft === 0 ? 'Due Today!' : daysLeft < 0 ? 'Past Due' : `${daysLeft} days remaining`}
                   </div>
                 )}
+
+                {statusInfo.text !== 'Completed' && (
+                  <Button variant="outline" className="w-full mt-4 hover:bg-success/10 hover:text-success hover:border-success/30 transition-colors" onClick={() => handleMarkComplete(assignment.id)}>
+                    <Check size={16} className="mr-2" /> Mark Completed
+                  </Button>
+                )}
               </Card>
             );
           })
         )}
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="New Assignment">
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingId(null); }} title={editingId ? "Edit Assignment" : "New Assignment"}>
         <form onSubmit={handleAdd} className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Subject</label>
-            <input required type="text" value={formData.subject} onChange={e => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-2 border rounded-xl" placeholder="e.g. Physics" />
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Subject</label>
+              <input required type="text" value={formData.subject} onChange={e => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-2 border rounded-xl" placeholder="e.g. Physics" />
+            </div>
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Priority</label>
+              <select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})} className="w-full px-4 py-2 border rounded-xl bg-white">
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
           </div>
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">Title</label>
             <input required type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border rounded-xl" placeholder="e.g. Chapter 4 Questions" />
           </div>
           <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Description (Optional)</label>
+            <textarea value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 border rounded-xl h-20 resize-none" placeholder="Add extra details..."></textarea>
+          </div>
+          <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">Deadline</label>
             <input required type="datetime-local" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} className="w-full px-4 py-2 border rounded-xl" />
           </div>
-          <Button type="submit" className="w-full mt-4">Save Assignment</Button>
+          <Button type="submit" className="w-full mt-4">{editingId ? "Update Assignment" : "Save Assignment"}</Button>
         </form>
       </Modal>
 

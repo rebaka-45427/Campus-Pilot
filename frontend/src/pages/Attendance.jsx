@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, GraduationCap } from 'lucide-react';
+import { Plus, Trash2, GraduationCap, Edit2, CheckCircle2, XCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -10,6 +10,7 @@ import api from '../services/api';
 export default function Attendance() {
   const [subjects, setSubjects] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ name: '', total_classes: 0, classes_attended: 0 });
 
   useEffect(() => {
@@ -28,12 +29,44 @@ export default function Attendance() {
   const handleAddSubject = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/subjects', formData);
-      toast.success('Subject added');
+      if (editingId) {
+        await api.put(`/subjects/${editingId}`, formData);
+        toast.success('Subject updated');
+      } else {
+        await api.post('/subjects', formData);
+        toast.success('Subject added');
+      }
       setIsModalOpen(false);
+      setEditingId(null);
       fetchSubjects();
     } catch (error) {
-      toast.error('Failed to add subject');
+      toast.error(editingId ? 'Failed to update subject' : 'Failed to add subject');
+    }
+  };
+
+  const handleEditSubject = (subject) => {
+    setFormData(subject);
+    setEditingId(subject.id);
+    setIsModalOpen(true);
+  };
+
+  const handleMarkPresent = async (id) => {
+    try {
+      await api.post(`/subjects/${id}/present`);
+      toast.success('Marked Present');
+      fetchSubjects();
+    } catch (error) {
+      toast.error('Failed to mark present');
+    }
+  };
+
+  const handleMarkAbsent = async (id) => {
+    try {
+      await api.post(`/subjects/${id}/absent`);
+      toast.success('Marked Absent');
+      fetchSubjects();
+    } catch (error) {
+      toast.error('Failed to mark absent');
     }
   };
 
@@ -71,7 +104,7 @@ export default function Attendance() {
           <h2 className="text-2xl font-bold text-gray-900">Attendance Tracker</h2>
           <p className="text-gray-500 mt-1">Keep your attendance above 75% to stay in the green zone.</p>
         </div>
-        <Button onClick={() => { setFormData({ name: '', total_classes: 0, classes_attended: 0 }); setIsModalOpen(true); }}>
+        <Button onClick={() => { setFormData({ name: '', total_classes: 0, classes_attended: 0 }); setEditingId(null); setIsModalOpen(true); }}>
           <Plus size={20} className="mr-2" /> Add Subject
         </Button>
       </div>
@@ -124,7 +157,10 @@ export default function Attendance() {
 
           return (
             <Card key={subject.id} className="relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex space-x-2">
+                <button onClick={() => handleEditSubject(subject)} className="text-gray-400 hover:text-primary bg-white p-2 rounded-lg shadow-sm border border-gray-100">
+                  <Edit2 size={16} />
+                </button>
                 <button onClick={() => handleDelete(subject.id)} className="text-gray-400 hover:text-danger bg-white p-2 rounded-lg shadow-sm border border-gray-100">
                   <Trash2 size={16} />
                 </button>
@@ -134,7 +170,7 @@ export default function Attendance() {
                 <div className={`p-2 rounded-lg ${scheme.bg} ${scheme.color}`}>
                   <GraduationCap size={20} />
                 </div>
-                <h3 className="font-bold text-gray-900 text-lg truncate pr-8">{subject.name}</h3>
+                <h3 className="font-bold text-gray-900 text-lg truncate pr-16">{subject.name}</h3>
               </div>
 
               <div className="flex justify-between items-end mb-2">
@@ -150,12 +186,21 @@ export default function Attendance() {
                 <div className="h-2.5 rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: scheme.fill }}></div>
               </div>
 
+              <div className="flex space-x-2">
+                <Button variant="outline" className="flex-1 text-sm py-2 hover:bg-success/10 hover:text-success hover:border-success/30 transition-colors" onClick={() => handleMarkPresent(subject.id)}>
+                  <CheckCircle2 size={16} className="mr-1 inline" /> Present
+                </Button>
+                <Button variant="outline" className="flex-1 text-sm py-2 hover:bg-danger/10 hover:text-danger hover:border-danger/30 transition-colors" onClick={() => handleMarkAbsent(subject.id)}>
+                  <XCircle size={16} className="mr-1 inline" /> Absent
+                </Button>
+              </div>
+
             </Card>
           );
         })}
       </div>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Add New Subject">
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingId(null); }} title={editingId ? "Edit Subject" : "Add New Subject"}>
         <form onSubmit={handleAddSubject} className="space-y-4">
           <div>
             <label className="block text-sm font-bold text-gray-700 mb-1">Subject Name</label>

@@ -33,34 +33,53 @@ class TaskBase(BaseModel):
     category: str
     priority: str
     deadline: Optional[datetime] = None
+    estimated_time: Optional[str] = None
+    status: str = "pending"
     notes: Optional[str] = None
 
 class TaskCreate(TaskBase):
     pass
 
-class TaskUpdate(TaskBase):
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    category: Optional[str] = None
+    priority: Optional[str] = None
+    deadline: Optional[datetime] = None
+    estimated_time: Optional[str] = None
     status: Optional[str] = None
+    notes: Optional[str] = None
 
 class Task(TaskBase):
     id: int
-    status: str
-    created_at: datetime
     user_id: int
+    created_at: datetime
+    completed_at: Optional[datetime] = None
     class Config:
         from_attributes = True
 
 class AssignmentBase(BaseModel):
     subject: str
     title: str
+    description: Optional[str] = None
+    priority: str = "Medium"
     deadline: datetime
     status: str = "Pending"
 
 class AssignmentCreate(AssignmentBase):
     pass
 
+class AssignmentUpdate(BaseModel):
+    subject: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    priority: Optional[str] = None
+    deadline: Optional[datetime] = None
+    status: Optional[str] = None
+
 class Assignment(AssignmentBase):
     id: int
     user_id: int
+    completed_at: Optional[datetime] = None
     class Config:
         from_attributes = True
 
@@ -72,6 +91,11 @@ class SubjectBase(BaseModel):
 class SubjectCreate(SubjectBase):
     pass
 
+class SubjectUpdate(BaseModel):
+    name: Optional[str] = None
+    total_classes: Optional[int] = None
+    classes_attended: Optional[int] = None
+
 class Subject(SubjectBase):
     id: int
     user_id: int
@@ -81,10 +105,17 @@ class Subject(SubjectBase):
 class NoteBase(BaseModel):
     title: str
     content: str
-    is_pinned: bool = False
+    is_pinned: Optional[bool] = False
+    is_archived: Optional[bool] = False
 
 class NoteCreate(NoteBase):
     pass
+
+class NoteUpdate(BaseModel):
+    title: Optional[str] = None
+    content: Optional[str] = None
+    is_pinned: Optional[bool] = None
+    is_archived: Optional[bool] = None
 
 class Note(NoteBase):
     id: int
@@ -128,5 +159,18 @@ class Setting(SettingBase):
     user_id: int
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+
+# --- Activity Log Schemas ---
+class ActivityLogBase(BaseModel):
+    action: str
+    entity_type: str
+    details: str
+
+class ActivityLog(ActivityLogBase):
+    id: int
+    user_id: int
+    created_at: datetime
     class Config:
         from_attributes = True

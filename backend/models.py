@@ -23,9 +23,11 @@ class Task(Base):
     category = Column(String)
     priority = Column(String)
     deadline = Column(DateTime(timezone=True), nullable=True)
+    estimated_time = Column(String, nullable=True)
     status = Column(String, default="pending")
     notes = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"))
 
 class Assignment(Base):
@@ -34,8 +36,11 @@ class Assignment(Base):
     id = Column(Integer, primary_key=True, index=True)
     subject = Column(String)
     title = Column(String)
+    description = Column(String, nullable=True)
+    priority = Column(String, default="Medium")
     deadline = Column(DateTime(timezone=True))
-    status = Column(String, default="pending") # Pending, Completed, Late
+    status = Column(String, default="Pending") # Pending, In Progress, Completed, Overdue
+    completed_at = Column(DateTime(timezone=True), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"))
 
 class Subject(Base):
@@ -52,6 +57,7 @@ class Note(Base):
     title = Column(String, index=True)
     content = Column(String)
     is_pinned = Column(Boolean, default=False)
+    is_archived = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     user_id = Column(Integer, ForeignKey("users.id"))
 
@@ -80,3 +86,12 @@ class Setting(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     user_id = Column(Integer, ForeignKey("users.id"), unique=True)
+
+class ActivityLog(Base):
+    __tablename__ = "activity_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    action = Column(String)
+    entity_type = Column(String)
+    details = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

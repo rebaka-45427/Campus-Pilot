@@ -13,9 +13,11 @@ import {
   Settings,
   UserCircle,
   CalendarDays,
-  StickyNote
+  StickyNote,
+  Search
 } from 'lucide-react';
 import { cn } from '../utils/cn';
+import GlobalSearch from '../components/GlobalSearch';
 
 export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -139,10 +141,18 @@ export default function MainLayout() {
             </div>
             <span className="text-lg font-black tracking-tight text-gray-900">CampusPilot</span>
           </div>
-          <button onClick={toggleSidebar} className="p-2 -mr-2 text-gray-600 hover:bg-gray-100 rounded-xl">
-            <Menu size={24} />
-          </button>
+          <div className="flex items-center">
+            <button className="text-gray-400 hover:text-gray-900 mr-2 flex items-center justify-center bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-lg text-sm font-medium" onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: true }))}>
+              <Search size={16} className="mr-1" /> Search
+            </button>
+            <button onClick={toggleSidebar} className="p-2 -mr-2 text-gray-600 hover:bg-gray-100 rounded-xl">
+              <Menu size={24} />
+            </button>
+          </div>
         </header>
+
+        {/* Global Search Component */}
+        <GlobalSearch />
 
         {/* Page Content */}
         <div className="flex-1 overflow-y-auto p-6 md:p-10 scroll-smooth">
