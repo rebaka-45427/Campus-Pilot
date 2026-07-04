@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-background: #F8FAFC;
+  --color-primary: 147 51 234; /* Purple 600 default */
+  --text-primary: #111827;
+  --text-secondary: #6B7280;
+}
+
+html.dark {
+  --color-background: #111827; /* Gray 900 */
+  --text-primary: #F9FAFB;
+  --text-secondary: #9CA3AF;
+}
+
+/* Card and container backgrounds for dark mode */
+html.dark .bg-white {
+  background-color: #1F2937 !important; /* Gray 800 */
+  border-color: #374151 !important; /* Gray 700 */
+  color: var(--text-primary);
+}
+
+html.dark .text-gray-900 {
+  color: var(--text-primary) !important;
+}
+
+html.dark .text-gray-500, html.dark .text-gray-600 {
+  color: var(--text-secondary) !important;
+}
+
+html.dark .bg-gray-50, html.dark .bg-gray-100 {
+  background-color: #374151 !important; /* Gray 700 */
+}
+
+html.dark .border-gray-50, html.dark .border-gray-100, html.dark .border-gray-200 {
+  border-color: #374151 !important;
+}
+
+@layer base {
+  body {
+    @apply font-sans antialiased;
+    background-color: var(--color-background);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+}
