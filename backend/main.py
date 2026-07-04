@@ -273,13 +273,13 @@ def delete_assignment(assignment_id: int, db: Session = Depends(get_db), current
     log_activity(db, current_user.id, "Deleted", "Assignment", f"Deleted assignment: {title}")
     return {"message": "Deleted"}
 
-# --- Attendance / Subjects ---
-@app.get("/subjects", response_model=List[schemas.Subject])
-def get_subjects(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+# --- Attendance ---
+@app.get("/attendance", response_model=List[schemas.Subject])
+def get_attendance(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     return db.query(models.Subject).filter(models.Subject.user_id == current_user.id).all()
 
-@app.post("/subjects", response_model=schemas.Subject)
-def create_subject(subject: schemas.SubjectCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+@app.post("/attendance", response_model=schemas.Subject)
+def create_attendance(subject: schemas.SubjectCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     db_subject = models.Subject(**subject.model_dump(), user_id=current_user.id)
     db.add(db_subject)
     db.commit()
@@ -287,44 +287,43 @@ def create_subject(subject: schemas.SubjectCreate, db: Session = Depends(get_db)
     log_activity(db, current_user.id, "Created", "Subject", f"Added subject: {db_subject.name}")
     return db_subject
 
-@app.put("/subjects/{subject_id}", response_model=schemas.Subject)
-def update_subject(subject_id: int, subject: schemas.SubjectUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+@app.put("/attendance/{subject_id}", response_model=schemas.Subject)
+def update_attendance(subject_id: int, subject: schemas.SubjectUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     db_subject = db.query(models.Subject).filter(models.Subject.id == subject_id, models.Subject.user_id == current_user.id).first()
     if not db_subject: raise HTTPException(status_code=404, detail="Subject not found")
     
     update_data = subject.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_subject, key, value)
-    
     db.commit()
     db.refresh(db_subject)
     log_activity(db, current_user.id, "Updated", "Subject", f"Updated subject: {db_subject.name}")
     return db_subject
 
-@app.post("/subjects/{subject_id}/present", response_model=schemas.Subject)
+@app.patch("/attendance/{subject_id}/present", response_model=schemas.Subject)
 def mark_present(subject_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     db_subject = db.query(models.Subject).filter(models.Subject.id == subject_id, models.Subject.user_id == current_user.id).first()
     if not db_subject: raise HTTPException(status_code=404, detail="Subject not found")
     
-    db_subject.total_classes += 1
+    # Only increment attended classes, do not touch total classes automatically
     db_subject.classes_attended += 1
     db.commit()
     db.refresh(db_subject)
     log_activity(db, current_user.id, "Marked Present", "Attendance", f"Attended class for: {db_subject.name}")
     return db_subject
 
-@app.post("/subjects/{subject_id}/absent", response_model=schemas.Subject)
+@app.patch("/attendance/{subject_id}/absent", response_model=schemas.Subject)
 def mark_absent(subject_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     db_subject = db.query(models.Subject).filter(models.Subject.id == subject_id, models.Subject.user_id == current_user.id).first()
     if not db_subject: raise HTTPException(status_code=404, detail="Subject not found")
     
-    db_subject.total_classes += 1
-    db.commit()
-    db.refresh(db_subject)
-    log_activity(db, current_user.id, "Marked Absent", "Attendance", f"Missed class for: {db_subject.name}")
+    # Absent does nothing to database values
+    # We don't even need to commit or log according to "no database values change", 
+    # but logging might be nice. The user said: "Absent should NOT modify database values."
+    # So we simply return the subject unchanged.
     return db_subject
 
-@app.delete("/subjects/{subject_id}")
+@app.delete("/attendance/{subject_id}")
 def delete_subject(subject_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     db_subject = db.query(models.Subject).filter(models.Subject.id == subject_id, models.Subject.user_id == current_user.id).first()
     if not db_subject: raise HTTPException(status_code=404, detail="Subject not found")

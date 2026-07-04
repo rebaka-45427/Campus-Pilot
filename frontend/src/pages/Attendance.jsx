@@ -19,7 +19,7 @@ export default function Attendance() {
 
   const fetchSubjects = async () => {
     try {
-      const res = await api.get('/subjects');
+      const res = await api.get('/attendance');
       setSubjects(res.data);
     } catch (error) {
       toast.error('Failed to fetch attendance data');
@@ -30,10 +30,14 @@ export default function Attendance() {
     e.preventDefault();
     try {
       if (editingId) {
-        await api.put(`/subjects/${editingId}`, formData);
+        if (formData.classes_attended > formData.total_classes) {
+          toast.error("Attended classes cannot be greater than total classes");
+          return;
+        }
+        await api.put(`/attendance/${editingId}`, formData);
         toast.success('Subject updated');
       } else {
-        await api.post('/subjects', formData);
+        await api.post('/attendance', formData);
         toast.success('Subject added');
       }
       setIsModalOpen(false);
@@ -52,7 +56,7 @@ export default function Attendance() {
 
   const handleMarkPresent = async (id) => {
     try {
-      await api.post(`/subjects/${id}/present`);
+      await api.patch(`/attendance/${id}/present`);
       toast.success('Marked Present');
       fetchSubjects();
     } catch (error) {
@@ -62,9 +66,9 @@ export default function Attendance() {
 
   const handleMarkAbsent = async (id) => {
     try {
-      await api.post(`/subjects/${id}/absent`);
-      toast.success('Marked Absent');
-      fetchSubjects();
+      await api.patch(`/attendance/${id}/absent`);
+      toast.success('Marked as absent');
+      // No need to fetchSubjects since absent doesn't modify anything
     } catch (error) {
       toast.error('Failed to mark absent');
     }
@@ -73,7 +77,7 @@ export default function Attendance() {
   const handleDelete = async (id) => {
     if(window.confirm('Delete this subject?')) {
       try {
-        await api.delete(`/subjects/${id}`);
+        await api.delete(`/attendance/${id}`);
         toast.success('Subject deleted');
         fetchSubjects();
       } catch (error) {
