@@ -1,7 +1,9 @@
 import axios from "axios";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || "https://campus-pilot.onrender.com";
+
 const api = axios.create({
-  baseURL: "https://campus-pilot.onrender.com",
+  baseURL: API_BASE_URL,
   headers: {
     "Content-Type": "application/json",
   },
@@ -25,13 +27,11 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && window.location.pathname !== '/login') {
       localStorage.removeItem("token");
-
       // Redirect to login page
       window.location.href = "/login";
     }
-
     return Promise.reject(error);
   }
 );

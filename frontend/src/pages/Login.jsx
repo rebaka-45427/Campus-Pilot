@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { LogIn } from "lucide-react";
 import toast from "react-hot-toast";
 
-import api from "../api";
+import api from "../services/api";
 import Card from "../components/Card";
 import Button from "../components/Button";
 
@@ -34,7 +34,7 @@ export default function Login() {
     try {
       // Login request
       const params = new URLSearchParams();
-      params.append("username", formData.username);
+      params.append("username", formData.username.trim());
       params.append("password", formData.password);
 
       const loginResponse = await api.post("/token", params, {
