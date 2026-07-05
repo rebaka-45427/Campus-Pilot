@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, GraduationCap, Edit2, CheckCircle2, XCircle } from 'lucide-react';
+import { Plus, Trash2, GraduationCap, Edit2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import Loader from '../components/Loader';
 
 import api from '../services/api';
 
 export default function Attendance() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
   const [subjects, setSubjects] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -19,10 +22,15 @@ export default function Attendance() {
 
   const fetchSubjects = async () => {
     try {
+      setIsLoading(true);
+      setIsError(false);
       const res = await api.get('/attendance');
       setSubjects(res.data);
     } catch (error) {
+      setIsError(true);
       toast.error('Failed to fetch attendance data');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -86,8 +94,6 @@ export default function Attendance() {
     }
   };
 
-
-
   const totalClasses = subjects.reduce((sum, s) => sum + s.total_classes, 0);
   const totalAttended = subjects.reduce((sum, s) => sum + s.classes_attended, 0);
   const overallPercentage = totalClasses === 0 ? 0 : Math.round((totalAttended / totalClasses) * 100);
@@ -99,6 +105,20 @@ export default function Attendance() {
   };
 
   const overallScheme = getColorScheme(overallPercentage);
+
+  if (isLoading) {
+    return <Loader text="Loading attendance..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center">
+        <AlertCircle className="w-12 h-12 text-danger mb-4" />
+        <h3 className="text-lg font-bold text-gray-900">Failed to load attendance</h3>
+        <p className="text-gray-500">Please try refreshing the page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
@@ -155,53 +175,61 @@ export default function Attendance() {
           </div>
         </Card>
 
-        {subjects.map(subject => {
-          const pct = subject.total_classes === 0 ? 0 : Math.round((subject.classes_attended / subject.total_classes) * 100);
-          const scheme = getColorScheme(pct);
+        {subjects.length === 0 ? (
+          <div className="col-span-1 md:col-span-3 text-center py-12 text-gray-500 bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
+            <GraduationCap className="mx-auto h-12 w-12 text-gray-300 mb-3" />
+            <p className="font-medium text-gray-900">No subjects tracked yet.</p>
+            <p className="text-sm text-gray-400 mt-1">Click the button above to add your first subject.</p>
+          </div>
+        ) : (
+          subjects.map(subject => {
+            const pct = subject.total_classes === 0 ? 0 : Math.round((subject.classes_attended / subject.total_classes) * 100);
+            const scheme = getColorScheme(pct);
 
-          return (
-            <Card key={subject.id} className="relative overflow-hidden group">
-              <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex space-x-2">
-                <button onClick={() => handleEditSubject(subject)} className="text-gray-400 hover:text-primary bg-white p-2 rounded-lg shadow-sm border border-gray-100">
-                  <Edit2 size={16} />
-                </button>
-                <button onClick={() => handleDelete(subject.id)} className="text-gray-400 hover:text-danger bg-white p-2 rounded-lg shadow-sm border border-gray-100">
-                  <Trash2 size={16} />
-                </button>
-              </div>
-
-              <div className="flex items-center space-x-3 mb-4">
-                <div className={`p-2 rounded-lg ${scheme.bg} ${scheme.color}`}>
-                  <GraduationCap size={20} />
+            return (
+              <Card key={subject.id} className="relative overflow-hidden group">
+                <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex space-x-2">
+                  <button onClick={() => handleEditSubject(subject)} className="text-gray-400 hover:text-primary bg-white p-2 rounded-lg shadow-sm border border-gray-100">
+                    <Edit2 size={16} />
+                  </button>
+                  <button onClick={() => handleDelete(subject.id)} className="text-gray-400 hover:text-danger bg-white p-2 rounded-lg shadow-sm border border-gray-100">
+                    <Trash2 size={16} />
+                  </button>
                 </div>
-                <h3 className="font-bold text-gray-900 text-lg truncate pr-16">{subject.name}</h3>
-              </div>
 
-              <div className="flex justify-between items-end mb-2">
-                <div>
-                  <span className={`text-3xl font-black ${scheme.color}`}>{pct}%</span>
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className={`p-2 rounded-lg ${scheme.bg} ${scheme.color}`}>
+                    <GraduationCap size={20} />
+                  </div>
+                  <h3 className="font-bold text-gray-900 text-lg truncate pr-16">{subject.name}</h3>
                 </div>
-                <div className="text-right text-sm font-medium text-gray-500">
-                  {subject.classes_attended} / {subject.total_classes}
+
+                <div className="flex justify-between items-end mb-2">
+                  <div>
+                    <span className={`text-3xl font-black ${scheme.color}`}>{pct}%</span>
+                  </div>
+                  <div className="text-right text-sm font-medium text-gray-500">
+                    {subject.classes_attended} / {subject.total_classes}
+                  </div>
                 </div>
-              </div>
 
-              <div className="w-full bg-gray-100 rounded-full h-2.5 mb-6">
-                <div className="h-2.5 rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: scheme.fill }}></div>
-              </div>
+                <div className="w-full bg-gray-100 rounded-full h-2.5 mb-6">
+                  <div className="h-2.5 rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: scheme.fill }}></div>
+                </div>
 
-              <div className="flex space-x-2">
-                <Button variant="outline" className="flex-1 text-sm py-2 hover:bg-success/10 hover:text-success hover:border-success/30 transition-colors" onClick={() => handleMarkPresent(subject.id)}>
-                  <CheckCircle2 size={16} className="mr-1 inline" /> Present
-                </Button>
-                <Button variant="outline" className="flex-1 text-sm py-2 hover:bg-danger/10 hover:text-danger hover:border-danger/30 transition-colors" onClick={() => handleMarkAbsent(subject.id)}>
-                  <XCircle size={16} className="mr-1 inline" /> Absent
-                </Button>
-              </div>
+                <div className="flex space-x-2">
+                  <Button variant="outline" className="flex-1 text-sm py-2 hover:bg-success/10 hover:text-success hover:border-success/30 transition-colors" onClick={() => handleMarkPresent(subject.id)}>
+                    <CheckCircle2 size={16} className="mr-1 inline" /> Present
+                  </Button>
+                  <Button variant="outline" className="flex-1 text-sm py-2 hover:bg-danger/10 hover:text-danger hover:border-danger/30 transition-colors" onClick={() => handleMarkAbsent(subject.id)}>
+                    <XCircle size={16} className="mr-1 inline" /> Absent
+                  </Button>
+                </div>
 
-            </Card>
-          );
-        })}
+              </Card>
+            );
+          })
+        )}
       </div>
 
       <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingId(null); }} title={editingId ? "Edit Subject" : "Add New Subject"}>

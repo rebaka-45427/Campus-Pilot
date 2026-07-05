@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Search, Pin, StickyNote, Edit3, Archive, RefreshCw } from 'lucide-react';
+import { Plus, Trash2, Search, Pin, StickyNote, Edit3, Archive, RefreshCw, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
+import Loader from '../components/Loader';
 import api from '../services/api';
 
 export default function Notes() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
   const [notes, setNotes] = useState([]);
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -55,10 +58,15 @@ export default function Notes() {
 
   const fetchNotes = async () => {
     try {
+      setIsLoading(true);
+      setIsError(false);
       const res = await api.get('/notes');
       setNotes(res.data);
     } catch (error) {
+      setIsError(true);
       toast.error('Failed to load notes');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -129,6 +137,20 @@ export default function Notes() {
     note.content.toLowerCase().includes(search.toLowerCase())
   ).sort((a, b) => b.is_pinned - a.is_pinned);
 
+  if (isLoading) {
+    return <Loader text="Loading notes..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center">
+        <AlertCircle className="w-12 h-12 text-danger mb-4" />
+        <h3 className="text-lg font-bold text-gray-900">Failed to load notes</h3>
+        <p className="text-gray-500">Please try refreshing the page.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in pb-20">
       
@@ -170,9 +192,10 @@ export default function Notes() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
         {filteredNotes.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-gray-500">
+          <div className="col-span-full text-center py-12 text-gray-500 bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
             <StickyNote className="mx-auto h-12 w-12 text-gray-300 mb-3" />
-            <p>No notes found. Create one!</p>
+            <p className="font-medium text-gray-900">No notes found.</p>
+            <p className="text-sm text-gray-400 mt-1">Click the button above to create one!</p>
           </div>
         ) : (
           filteredNotes.map(note => (

@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { UserCircle, Mail, School, Building, Calendar, Lock, LogOut, CheckCircle, BookOpen, GraduationCap } from 'lucide-react';
+import { UserCircle, Mail, School, Building, Calendar, Lock, LogOut, CheckCircle, BookOpen, GraduationCap, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Badge from '../components/Badge';
+import Loader from '../components/Loader';
 import api from '../services/api';
 
 export default function Profile() {
   const navigate = useNavigate();
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
   const [user, setUser] = useState({
     username: '',
     email: '',
@@ -34,6 +37,8 @@ export default function Profile() {
 
   const fetchProfile = async () => {
     try {
+      setIsLoading(true);
+      setIsError(false);
       const [userRes, analyticsRes] = await Promise.all([
         api.get('/users/me'),
         api.get('/analytics')
@@ -46,7 +51,10 @@ export default function Profile() {
         productivityScore: data.productivityScore
       });
     } catch (error) {
+      setIsError(true);
       toast.error('Failed to load profile');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -74,6 +82,20 @@ export default function Profile() {
     localStorage.removeItem('token');
     navigate('/login');
   };
+
+  if (isLoading) {
+    return <Loader text="Loading profile..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center">
+        <AlertCircle className="w-12 h-12 text-danger mb-4" />
+        <h3 className="text-lg font-bold text-gray-900">Failed to load profile</h3>
+        <p className="text-gray-500">Please try refreshing the page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in pb-20 max-w-4xl mx-auto">

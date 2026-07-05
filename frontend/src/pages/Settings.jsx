@@ -3,6 +3,7 @@ import { Palette, Bell, Moon, Sun, Monitor, Globe, Clock, RotateCcw } from 'luci
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
+import Loader from '../components/Loader';
 import { useSettings } from '../contexts/SettingsContext';
 
 const ACCENT_COLORS = [
@@ -55,7 +56,7 @@ export default function Settings() {
   };
 
   if (loading || !localSettings) {
-    return <div className="flex justify-center items-center h-64 text-gray-500">Loading settings...</div>;
+    return <Loader text="Loading settings..." />;
   }
 
   return (

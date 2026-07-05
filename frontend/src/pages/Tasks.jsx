@@ -1,14 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Search, Trash2, Edit2, CheckSquare, Clock, Timer } from 'lucide-react';
+import { Plus, Search, Trash2, Edit2, CheckSquare, Clock, Timer, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Badge from '../components/Badge';
 import Modal from '../components/Modal';
+import Loader from '../components/Loader';
 import api from '../services/api';
 
 export default function Tasks() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
   const [tasks, setTasks] = useState([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('All'); // All, Pending, Completed
@@ -30,10 +33,15 @@ export default function Tasks() {
 
   const fetchTasks = async () => {
     try {
+      setIsLoading(true);
+      setIsError(false);
       const res = await api.get('/tasks');
       setTasks(res.data);
     } catch (error) {
+      setIsError(true);
       toast.error('Failed to load tasks');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -107,6 +115,20 @@ export default function Tasks() {
 
   const completedCount = tasks.filter(t => t.status === 'completed').length;
   const progressPercent = tasks.length === 0 ? 0 : Math.round((completedCount / tasks.length) * 100);
+
+  if (isLoading) {
+    return <Loader text="Loading tasks..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center">
+        <AlertCircle className="w-12 h-12 text-danger mb-4" />
+        <h3 className="text-lg font-bold text-gray-900">Failed to load tasks</h3>
+        <p className="text-gray-500">Please try refreshing the page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in pb-20 relative min-h-screen">

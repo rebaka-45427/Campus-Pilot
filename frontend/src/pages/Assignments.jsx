@@ -6,9 +6,12 @@ import Card from '../components/Card';
 import Button from '../components/Button';
 import Badge from '../components/Badge';
 import Modal from '../components/Modal';
+import Loader from '../components/Loader';
 import api from '../services/api';
 
 export default function Assignments() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
   const [assignments, setAssignments] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -20,10 +23,15 @@ export default function Assignments() {
 
   const fetchAssignments = async () => {
     try {
+      setIsLoading(true);
+      setIsError(false);
       const res = await api.get('/assignments');
       setAssignments(res.data);
     } catch (error) {
+      setIsError(true);
       toast.error('Failed to load assignments');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -90,6 +98,20 @@ export default function Assignments() {
     return { text: 'Pending', color: 'warning', icon: Clock };
   };
 
+  if (isLoading) {
+    return <Loader text="Loading assignments..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center">
+        <AlertCircle className="w-12 h-12 text-danger mb-4" />
+        <h3 className="text-lg font-bold text-gray-900">Failed to load assignments</h3>
+        <p className="text-gray-500">Please try refreshing the page.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 animate-fade-in pb-20">
       
@@ -105,8 +127,10 @@ export default function Assignments() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {assignments.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-gray-500">
-            No upcoming assignments. You're all caught up!
+          <div className="col-span-full text-center py-12 text-gray-500 bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
+            <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500 font-medium">No assignments yet.</p>
+            <p className="text-sm text-gray-400 mt-1">Click the button above to add one.</p>
           </div>
         ) : (
           assignments.map(assignment => {

@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { format } from 'date-fns';
-import { CheckCircle, Clock, BookOpen, GraduationCap, Target } from 'lucide-react';
+import { CheckCircle, Clock, BookOpen, GraduationCap, Target, AlertCircle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import Card from '../components/Card';
 import StatCard from '../components/StatCard';
+import Loader from '../components/Loader';
 import api from '../services/api';
 
 export default function Dashboard() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
   const [stats, setStats] = useState({
     pendingTasks: 0,
     completedTasks: 0,
@@ -22,6 +25,8 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setIsLoading(true);
+        setIsError(false);
         const [userRes, analyticsRes, activityRes, tasksRes, subjectsRes] = await Promise.all([
           api.get('/users/me'),
           api.get('/analytics'),
@@ -63,10 +68,27 @@ export default function Dashboard() {
         });
       } catch (error) {
         console.error(error);
+        setIsError(true);
+      } finally {
+        setIsLoading(false);
       }
     };
     fetchData();
   }, []);
+
+  if (isLoading) {
+    return <Loader text="Loading dashboard..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center">
+        <AlertCircle className="w-12 h-12 text-danger mb-4" />
+        <h3 className="text-lg font-bold text-gray-900">Failed to load dashboard</h3>
+        <p className="text-gray-500">Please try refreshing the page.</p>
+      </div>
+    );
+  }
 
   const productivityScore = stats.productivityScore;
 

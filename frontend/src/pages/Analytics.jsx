@@ -3,14 +3,17 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell, LineChart, Line 
 } from 'recharts';
-import { CheckCircle, Clock, BookOpen, GraduationCap } from 'lucide-react';
+import { CheckCircle, Clock, BookOpen, GraduationCap, AlertCircle } from 'lucide-react';
 import Card from '../components/Card';
 import StatCard from '../components/StatCard';
+import Loader from '../components/Loader';
 import api from '../services/api';
 
 const COLORS = ['#9333EA', '#10B981', '#F59E0B', '#EF4444', '#3B82F6'];
 
 export default function Analytics() {
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
   const [stats, setStats] = useState({
     pieData: [],
     assignmentPie: [],
@@ -24,6 +27,8 @@ export default function Analytics() {
   useEffect(() => {
     const fetchAnalytics = async () => {
       try {
+        setIsLoading(true);
+        setIsError(false);
         const [analyticsRes, tasksRes] = await Promise.all([
           api.get('/analytics'),
           api.get('/tasks')
@@ -62,10 +67,27 @@ export default function Analytics() {
         });
       } catch (error) {
         console.error(error);
+        setIsError(true);
+      } finally {
+        setIsLoading(false);
       }
     };
     fetchAnalytics();
   }, []);
+
+  if (isLoading) {
+    return <Loader text="Loading analytics data..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center">
+        <AlertCircle className="w-12 h-12 text-danger mb-4" />
+        <h3 className="text-lg font-bold text-gray-900">Failed to load analytics</h3>
+        <p className="text-gray-500">Please try refreshing the page.</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-in pb-20">
@@ -109,28 +131,32 @@ export default function Analytics() {
         <Card>
           <h3 className="text-lg font-bold text-gray-900 mb-6">Task Categories Breakdown</h3>
           <div className="h-72 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={stats.pieData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={80}
-                  outerRadius={110}
-                  paddingAngle={5}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {stats.pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.1)' }}
-                />
-                <Legend verticalAlign="bottom" height={36} iconType="circle" />
-              </PieChart>
-            </ResponsiveContainer>
+            {stats.pieData.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={stats.pieData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={80}
+                    outerRadius={110}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {stats.pieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.1)' }}
+                  />
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-gray-400 text-sm">No task category data available</div>
+            )}
           </div>
         </Card>
 
@@ -138,29 +164,33 @@ export default function Analytics() {
         <Card className="col-span-1 lg:col-span-2">
           <h3 className="text-lg font-bold text-gray-900 mb-6">Assignment Completion Status</h3>
           <div className="h-72 flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={stats.assignmentPie}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={80}
-                  outerRadius={110}
-                  paddingAngle={5}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {stats.assignmentPie.map((entry, index) => {
-                    const colors = { 'Completed': '#10B981', 'Pending': '#F59E0B', 'Overdue': '#EF4444', 'No Data': '#E5E7EB' };
-                    return <Cell key={`cell-${index}`} fill={colors[entry.name] || '#9333EA'} />;
-                  })}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.1)' }}
-                />
-                <Legend verticalAlign="bottom" height={36} iconType="circle" />
-              </PieChart>
-            </ResponsiveContainer>
+            {stats.assignmentPie.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={stats.assignmentPie}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={80}
+                    outerRadius={110}
+                    paddingAngle={5}
+                    dataKey="value"
+                    stroke="none"
+                  >
+                    {stats.assignmentPie.map((entry, index) => {
+                      const colors = { 'Completed': '#10B981', 'Pending': '#F59E0B', 'Overdue': '#EF4444', 'No Data': '#E5E7EB' };
+                      return <Cell key={`cell-${index}`} fill={colors[entry.name] || '#9333EA'} />;
+                    })}
+                  </Pie>
+                  <Tooltip 
+                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 20px -2px rgba(0, 0, 0, 0.1)' }}
+                  />
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-gray-400 text-sm">No assignment data available</div>
+            )}
           </div>
         </Card>
 
