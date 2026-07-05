@@ -1,256 +1,663 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Search, Pin, StickyNote, Edit3, Archive, RefreshCw, AlertCircle } from 'lucide-react';
-import { format } from 'date-fns';
+import { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
+import { Plus, Trash2, Edit2, StickyNote, Pin, Archive, Search, ArchiveX } from 'lucide-react';
+import { KEYS, getList, setItem, generateId } from '../utils/storage';
+import { addActivity } from '../utils/activity';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
-import Loader from '../components/Loader';
-import api from '../services/api';
+
+const VIEWS = ['active', 'pinned', 'archived'];
+
+const VIEW_LABELS = {
+  active: 'Active',
+  pinned: 'Pinned',
+  archived: 'Archived',
+};
+
+function formatDate(iso) {
+  if (!iso) return '';
+  return new Date(iso).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
 
 export default function Notes() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isError, setIsError] = useState(false);
-  const [notes, setNotes] = useState([]);
+  const [notes, setNotes] = useState(() => getList(KEYS.notes));
   const [search, setSearch] = useState('');
+  const [view, setView] = useState('active');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingNote, setEditingNote] = useState(null);
-  const [activeTab, setActiveTab] = useState('active'); // active, archived
-  const [saveStatus, setSaveStatus] = useState('');
-  
-  const [formData, setFormData] = useState({
-    title: '',
-    content: '',
-    is_pinned: false,
-    is_archived: false
-  });
+  const [formData, setFormData] = useState({ title: '', content: '' });
 
-  useEffect(() => {
-    fetchNotes();
-  }, []);
+  // ─── Derived counts ───────────────────────────────────────────────────────
+  const activeCount   = useMemo(() => notes.filter(n => !n.archived).length, [notes]);
+  const pinnedCount   = useMemo(() => notes.filter(n => n.pinned && !n.archived).length, [notes]);
+  const archivedCount = useMemo(() => notes.filter(n => n.archived).length, [notes]);
 
-  useEffect(() => {
-    if (!editingNote) return;
+  // ─── Filtered notes ───────────────────────────────────────────────────────
+  const filteredNotes = useMemo(() => {
+    const q = search.toLowerCase().trim();
+    let base;
+    if (view === 'active')   base = notes.filter(n => !n.archived);
+    else if (view === 'pinned') base = notes.filter(n => n.pinned && !n.archived);
+    else                     base = notes.filter(n => n.archived);
 
-    // Skip auto-save if formData matches editingNote exactly (e.g. just opened)
-    if (
-      formData.title === editingNote.title && 
-      formData.content === editingNote.content && 
-      formData.is_pinned === editingNote.is_pinned &&
-      formData.is_archived === editingNote.is_archived
-    ) {
-      return;
-    }
+    if (!q) return base;
+    return base.filter(
+      n =>
+        n.title.toLowerCase().includes(q) ||
+        n.content.toLowerCase().includes(q),
+    );
+  }, [notes, view, search]);
 
-    const timer = setTimeout(async () => {
-      setSaveStatus('Saving...');
-      try {
-        await api.put(`/notes/${editingNote.id}`, formData);
-        setSaveStatus('Saved');
-        fetchNotes();
-      } catch (e) {
-        setSaveStatus('Error');
-      }
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [formData, editingNote]);
-
-  const fetchNotes = async () => {
-    try {
-      setIsLoading(true);
-      setIsError(false);
-      const res = await api.get('/notes');
-      setNotes(res.data);
-    } catch (error) {
-      setIsError(true);
-      toast.error('Failed to load notes');
-    } finally {
-      setIsLoading(false);
-    }
+  // ─── Persist helper ───────────────────────────────────────────────────────
+  const persist = (updated) => {
+    setItem(KEYS.notes, updated);
+    setNotes(updated);
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingNote) {
-        await api.put(`/notes/${editingNote.id}`, formData);
-        toast.success('Note updated');
-      } else {
-        await api.post('/notes', formData);
-        toast.success('Note created');
-      }
-      setIsModalOpen(false);
-      fetchNotes();
-    } catch (error) {
-      toast.error('Error saving note');
-    }
-  };
-
+  // ─── Modal helpers ────────────────────────────────────────────────────────
   const openModal = (note = null) => {
-    setSaveStatus('');
-    if (note) {
-      setEditingNote(note);
-      setFormData({ title: note.title, content: note.content, is_pinned: note.is_pinned, is_archived: note.is_archived || false });
-    } else {
-      setEditingNote(null);
-      setFormData({ title: '', content: '', is_pinned: false, is_archived: false });
-    }
+    setEditingNote(note);
+    setFormData(
+      note
+        ? { title: note.title, content: note.content }
+        : { title: '', content: '' },
+    );
     setIsModalOpen(true);
   };
 
-  const deleteNote = async (id) => {
-    if (window.confirm('Delete this note?')) {
-      try {
-        await api.delete(`/notes/${id}`);
-        toast.success('Note deleted');
-        fetchNotes();
-      } catch (error) {
-        toast.error('Error deleting note');
-      }
-    }
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingNote(null);
+    setFormData({ title: '', content: '' });
   };
 
-  const togglePin = async (id) => {
-    try {
-      await api.put(`/notes/${id}/pin`);
-      fetchNotes();
-    } catch (error) {
-      toast.error('Error pinning note');
+  // ─── Submit ───────────────────────────────────────────────────────────────
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const { title, content } = formData;
+    if (!title.trim()) {
+      toast.error('Title is required.');
+      return;
     }
+
+    const now = new Date().toISOString();
+    let updated;
+
+    if (editingNote) {
+      updated = notes.map(n =>
+        n.id === editingNote.id
+          ? { ...n, title: title.trim(), content: content.trim(), updated_at: now }
+          : n,
+      );
+      addActivity({ type: 'note_updated', label: `Updated note "${title.trim()}"` });
+      toast.success('Note updated.');
+    } else {
+      const newNote = {
+        id: generateId(),
+        title: title.trim(),
+        content: content.trim(),
+        pinned: false,
+        archived: false,
+        created_at: now,
+        updated_at: now,
+      };
+      updated = [newNote, ...notes];
+      addActivity({ type: 'note_created', label: `Created note "${title.trim()}"` });
+      toast.success('Note created.');
+    }
+
+    persist(updated);
+    closeModal();
   };
 
-  const toggleArchive = async (id) => {
-    try {
-      await api.put(`/notes/${id}/archive`);
-      fetchNotes();
-      toast.success('Note moved');
-    } catch (error) {
-      toast.error('Error archiving note');
-    }
+  // ─── Delete ───────────────────────────────────────────────────────────────
+  const deleteNote = (id) => {
+    if (!window.confirm('Delete this note? This cannot be undone.')) return;
+    const target = notes.find(n => n.id === id);
+    const updated = notes.filter(n => n.id !== id);
+    persist(updated);
+    addActivity({ type: 'note_deleted', label: `Deleted note "${target?.title}"` });
+    toast.success('Note deleted.');
   };
 
-  const displayedNotes = notes.filter(note => activeTab === 'archived' ? note.is_archived : !note.is_archived);
-  
-  const filteredNotes = displayedNotes.filter(note => 
-    note.title.toLowerCase().includes(search.toLowerCase()) || 
-    note.content.toLowerCase().includes(search.toLowerCase())
-  ).sort((a, b) => b.is_pinned - a.is_pinned);
-
-  if (isLoading) {
-    return <Loader text="Loading notes..." />;
-  }
-
-  if (isError) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-center">
-        <AlertCircle className="w-12 h-12 text-danger mb-4" />
-        <h3 className="text-lg font-bold text-gray-900">Failed to load notes</h3>
-        <p className="text-gray-500">Please try refreshing the page.</p>
-      </div>
+  // ─── Toggle pin ───────────────────────────────────────────────────────────
+  const togglePin = (id) => {
+    const updated = notes.map(n =>
+      n.id === id ? { ...n, pinned: !n.pinned, updated_at: new Date().toISOString() } : n,
     );
-  }
+    persist(updated);
+    const isPinned = updated.find(n => n.id === id)?.pinned;
+    toast.success(isPinned ? 'Note pinned.' : 'Note unpinned.');
+  };
 
+  // ─── Toggle archive ───────────────────────────────────────────────────────
+  const toggleArchive = (id) => {
+    const updated = notes.map(n =>
+      n.id === id ? { ...n, archived: !n.archived, updated_at: new Date().toISOString() } : n,
+    );
+    persist(updated);
+    const isArchived = updated.find(n => n.id === id)?.archived;
+    toast.success(isArchived ? 'Note archived.' : 'Note restored.');
+  };
+
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6 animate-fade-in pb-20">
-      
-      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Notes</h2>
-          <p className="text-gray-500 mt-1">Capture your thoughts and ideas.</p>
+    <div className="notes-page">
+      {/* ── Header ── */}
+      <div className="notes-header">
+        <div className="notes-header-left">
+          <StickyNote size={28} className="notes-title-icon" />
+          <h1 className="notes-title">Notes</h1>
         </div>
-        <Button onClick={() => openModal()}>
-          <Plus size={20} className="mr-2" /> New Note
+        <Button variant="primary" onClick={() => openModal()} className="notes-new-btn">
+          <Plus size={16} />
+          New Note
         </Button>
       </div>
 
-      <div className="flex gap-4 mb-6 border-b border-gray-200">
-        <button 
-          onClick={() => setActiveTab('active')} 
-          className={`pb-2 px-1 font-bold text-sm ${activeTab === 'active' ? 'text-primary border-b-2 border-primary' : 'text-gray-500'}`}
-        >
-          Active Notes
-        </button>
-        <button 
-          onClick={() => setActiveTab('archived')} 
-          className={`pb-2 px-1 font-bold text-sm ${activeTab === 'archived' ? 'text-primary border-b-2 border-primary' : 'text-gray-500'}`}
-        >
-          Archived
-        </button>
+      {/* ── Stats row ── */}
+      <div className="notes-stats-row">
+        <span className="notes-stat">
+          <span className="notes-stat-value">{activeCount}</span>
+          <span className="notes-stat-label">Active</span>
+        </span>
+        <span className="notes-stat-divider" />
+        <span className="notes-stat">
+          <span className="notes-stat-value">{pinnedCount}</span>
+          <span className="notes-stat-label">Pinned</span>
+        </span>
+        <span className="notes-stat-divider" />
+        <span className="notes-stat">
+          <span className="notes-stat-value">{archivedCount}</span>
+          <span className="notes-stat-label">Archived</span>
+        </span>
       </div>
 
-      <div className="relative mb-8">
-        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-        <input 
-          type="text" 
-          placeholder="Search notes..." 
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-        />
+      {/* ── Search + Tabs ── */}
+      <div className="notes-controls">
+        <div className="notes-search-wrap">
+          <Search size={16} className="notes-search-icon" />
+          <input
+            type="text"
+            className="notes-search-input"
+            placeholder="Search notes…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+        <div className="notes-tabs">
+          {VIEWS.map(v => (
+            <button
+              key={v}
+              className={`notes-tab${view === v ? ' notes-tab--active' : ''}`}
+              onClick={() => setView(v)}
+            >
+              {VIEW_LABELS[v]}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {filteredNotes.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-gray-500 bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
-            <StickyNote className="mx-auto h-12 w-12 text-gray-300 mb-3" />
-            <p className="font-medium text-gray-900">No notes found.</p>
-            <p className="text-sm text-gray-400 mt-1">Click the button above to create one!</p>
-          </div>
-        ) : (
-          filteredNotes.map(note => (
-            <Card key={note.id} hover className="relative group flex flex-col h-64">
-              
-              <div className="flex justify-between items-start mb-2">
-                <h3 className="font-bold text-gray-900 text-lg truncate pr-4">{note.title}</h3>
-                <button onClick={() => togglePin(note.id)} className={`p-1.5 rounded-lg transition-colors ${note.is_pinned ? 'text-primary bg-primary/10' : 'text-gray-300 hover:text-gray-600 hover:bg-gray-100'}`}>
-                  <Pin size={18} className={note.is_pinned ? 'fill-primary' : ''} />
-                </button>
-              </div>
+      {/* ── Grid ── */}
+      {filteredNotes.length === 0 ? (
+        <div className="notes-empty">
+          <StickyNote size={48} className="notes-empty-icon" />
+          <p className="notes-empty-text">
+            {search
+              ? 'No notes match your search.'
+              : view === 'archived'
+              ? 'No archived notes.'
+              : view === 'pinned'
+              ? 'No pinned notes.'
+              : 'No notes yet. Create your first note!'}
+          </p>
+          {view === 'active' && !search && (
+            <Button variant="primary" onClick={() => openModal()}>
+              <Plus size={16} /> New Note
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="notes-grid">
+          {filteredNotes.map(note => (
+            <NoteCard
+              key={note.id}
+              note={note}
+              onEdit={() => openModal(note)}
+              onDelete={() => deleteNote(note.id)}
+              onPin={() => togglePin(note.id)}
+              onArchive={() => toggleArchive(note.id)}
+            />
+          ))}
+        </div>
+      )}
 
-              <div className="flex-1 overflow-hidden relative">
-                <p className="text-gray-600 text-sm whitespace-pre-wrap">{note.content}</p>
-                <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-white to-transparent pointer-events-none"></div>
-              </div>
-
-              <div className="pt-4 mt-auto border-t border-gray-100 flex justify-between items-center text-xs text-gray-400">
-                <span>{format(new Date(note.created_at), 'MMM do, yyyy')}</span>
-                <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => toggleArchive(note.id)} className="hover:text-warning" title={note.is_archived ? 'Unarchive' : 'Archive'}><Archive size={16} /></button>
-                  <button onClick={() => openModal(note)} className="hover:text-primary"><Edit3 size={16} /></button>
-                  <button onClick={() => deleteNote(note.id)} className="hover:text-danger"><Trash2 size={16} /></button>
-                </div>
-              </div>
-
-            </Card>
-          ))
-        )}
-      </div>
-
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingNote ? "Edit Note" : "New Note"} className="max-w-2xl">
-        {editingNote && saveStatus && (
-          <div className="absolute top-6 right-12 text-xs font-bold text-gray-400 flex items-center">
-            {saveStatus === 'Saving...' ? <RefreshCw size={12} className="animate-spin mr-1" /> : null}
-            {saveStatus}
+      {/* ── Modal ── */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={editingNote ? 'Edit Note' : 'New Note'}
+      >
+        <form onSubmit={handleSubmit} className="notes-form">
+          <div className="notes-form-group">
+            <label htmlFor="note-title" className="notes-form-label">
+              Title <span className="notes-form-required">*</span>
+            </label>
+            <input
+              id="note-title"
+              type="text"
+              className="notes-form-input"
+              placeholder="Note title"
+              value={formData.title}
+              onChange={e => setFormData(p => ({ ...p, title: e.target.value }))}
+              autoFocus
+            />
           </div>
-        )}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Title</label>
-            <input required type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border rounded-xl" placeholder="Note title" />
+          <div className="notes-form-group">
+            <label htmlFor="note-content" className="notes-form-label">
+              Content
+            </label>
+            <textarea
+              id="note-content"
+              className="notes-form-textarea"
+              placeholder="Write your note here…"
+              value={formData.content}
+              onChange={e => setFormData(p => ({ ...p, content: e.target.value }))}
+              rows={6}
+            />
           </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Content</label>
-            <textarea required rows="10" value={formData.content} onChange={e => setFormData({...formData, content: e.target.value})} className="w-full px-4 py-2 border rounded-xl resize-none" placeholder="Start typing..."></textarea>
+          <div className="notes-form-actions">
+            <Button type="button" variant="ghost" onClick={closeModal}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary">
+              {editingNote ? 'Save Changes' : 'Create Note'}
+            </Button>
           </div>
-          <div className="flex items-center">
-            <input type="checkbox" id="pin" checked={formData.is_pinned} onChange={e => setFormData({...formData, is_pinned: e.target.checked})} className="mr-2" />
-            <label htmlFor="pin" className="text-sm text-gray-700">Pin this note to the top</label>
-          </div>
-          <Button type="submit" className="w-full mt-4">{editingNote ? 'Save Note' : 'Create Note'}</Button>
         </form>
       </Modal>
 
+      {/* ── Scoped styles ── */}
+      <style>{`
+        /* ── Page layout ── */
+        .notes-page {
+          padding: 1.5rem;
+          max-width: 1200px;
+          margin: 0 auto;
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+
+        /* ── Header ── */
+        .notes-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+        .notes-header-left {
+          display: flex;
+          align-items: center;
+          gap: 0.625rem;
+        }
+        .notes-title-icon {
+          color: var(--color-primary, #6366f1);
+        }
+        .notes-title {
+          font-size: 1.625rem;
+          font-weight: 700;
+          margin: 0;
+          color: var(--color-text-primary, #f1f5f9);
+        }
+        .notes-new-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.375rem;
+        }
+
+        /* ── Stats row ── */
+        .notes-stats-row {
+          display: flex;
+          align-items: center;
+          gap: 1rem;
+          flex-wrap: wrap;
+        }
+        .notes-stat {
+          display: flex;
+          align-items: baseline;
+          gap: 0.3rem;
+        }
+        .notes-stat-value {
+          font-size: 1.25rem;
+          font-weight: 700;
+          color: var(--color-primary, #6366f1);
+        }
+        .notes-stat-label {
+          font-size: 0.8rem;
+          color: var(--color-text-muted, #94a3b8);
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+        }
+        .notes-stat-divider {
+          width: 1px;
+          height: 1.2rem;
+          background: var(--color-border, #334155);
+        }
+
+        /* ── Controls ── */
+        .notes-controls {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          flex-wrap: wrap;
+        }
+        .notes-search-wrap {
+          position: relative;
+          flex: 1;
+          min-width: 200px;
+        }
+        .notes-search-icon {
+          position: absolute;
+          left: 0.75rem;
+          top: 50%;
+          transform: translateY(-50%);
+          color: var(--color-text-muted, #94a3b8);
+          pointer-events: none;
+        }
+        .notes-search-input {
+          width: 100%;
+          padding: 0.5rem 0.75rem 0.5rem 2.25rem;
+          border-radius: 0.5rem;
+          border: 1px solid var(--color-border, #334155);
+          background: var(--color-surface, #1e293b);
+          color: var(--color-text-primary, #f1f5f9);
+          font-size: 0.9rem;
+          outline: none;
+          box-sizing: border-box;
+          transition: border-color 0.2s;
+        }
+        .notes-search-input:focus {
+          border-color: var(--color-primary, #6366f1);
+        }
+        .notes-tabs {
+          display: flex;
+          gap: 0.25rem;
+          background: var(--color-surface, #1e293b);
+          border: 1px solid var(--color-border, #334155);
+          border-radius: 0.5rem;
+          padding: 0.25rem;
+        }
+        .notes-tab {
+          padding: 0.35rem 0.875rem;
+          border-radius: 0.375rem;
+          border: none;
+          background: transparent;
+          color: var(--color-text-muted, #94a3b8);
+          font-size: 0.85rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: background 0.15s, color 0.15s;
+        }
+        .notes-tab:hover {
+          color: var(--color-text-primary, #f1f5f9);
+        }
+        .notes-tab--active {
+          background: var(--color-primary, #6366f1);
+          color: #fff;
+        }
+
+        /* ── Grid ── */
+        .notes-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 1rem;
+        }
+        @media (min-width: 768px) {
+          .notes-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (min-width: 1024px) {
+          .notes-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        /* ── Note card ── */
+        .note-card {
+          border-radius: 0.75rem;
+          border: 1px solid var(--color-border, #334155);
+          background: var(--color-surface, #1e293b);
+          padding: 1rem;
+          display: flex;
+          flex-direction: column;
+          gap: 0.5rem;
+          transition: border-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+        }
+        .note-card:hover {
+          box-shadow: 0 4px 16px rgba(0,0,0,0.25);
+        }
+        .note-card--pinned {
+          border-color: #ca8a04;
+          box-shadow: 0 0 0 1px #ca8a0440;
+        }
+        .note-card--archived {
+          opacity: 0.55;
+        }
+        .note-card-header {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 0.5rem;
+        }
+        .note-card-title {
+          font-size: 0.975rem;
+          font-weight: 600;
+          color: var(--color-text-primary, #f1f5f9);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          flex: 1;
+          margin: 0;
+        }
+        .note-card-pin-badge {
+          color: #ca8a04;
+          flex-shrink: 0;
+        }
+        .note-card-content {
+          font-size: 0.85rem;
+          color: var(--color-text-muted, #94a3b8);
+          line-height: 1.5;
+          display: -webkit-box;
+          -webkit-line-clamp: 3;
+          -webkit-box-orient: vertical;
+          overflow: hidden;
+          flex: 1;
+          white-space: pre-wrap;
+          word-break: break-word;
+          min-height: 3.6em;
+        }
+        .note-card-meta {
+          font-size: 0.73rem;
+          color: var(--color-text-muted, #94a3b8);
+        }
+        .note-card-actions {
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          margin-top: 0.25rem;
+          border-top: 1px solid var(--color-border, #334155);
+          padding-top: 0.5rem;
+        }
+        .note-card-action-btn {
+          padding: 0.3rem;
+          border-radius: 0.375rem;
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          color: var(--color-text-muted, #94a3b8);
+          display: flex;
+          align-items: center;
+          transition: color 0.15s, background 0.15s;
+        }
+        .note-card-action-btn:hover {
+          background: var(--color-hover, #334155);
+          color: var(--color-text-primary, #f1f5f9);
+        }
+        .note-card-action-btn--pin-active {
+          color: #ca8a04;
+        }
+        .note-card-action-btn--delete:hover {
+          color: #ef4444;
+        }
+        .note-card-spacer { flex: 1; }
+
+        /* ── Empty state ── */
+        .notes-empty {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 1rem;
+          padding: 4rem 1rem;
+          text-align: center;
+        }
+        .notes-empty-icon {
+          color: var(--color-text-muted, #94a3b8);
+          opacity: 0.5;
+        }
+        .notes-empty-text {
+          color: var(--color-text-muted, #94a3b8);
+          font-size: 0.95rem;
+          margin: 0;
+        }
+
+        /* ── Modal form ── */
+        .notes-form {
+          display: flex;
+          flex-direction: column;
+          gap: 1rem;
+        }
+        .notes-form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 0.375rem;
+        }
+        .notes-form-label {
+          font-size: 0.85rem;
+          font-weight: 500;
+          color: var(--color-text-primary, #f1f5f9);
+        }
+        .notes-form-required {
+          color: #ef4444;
+        }
+        .notes-form-input,
+        .notes-form-textarea {
+          padding: 0.5rem 0.75rem;
+          border-radius: 0.5rem;
+          border: 1px solid var(--color-border, #334155);
+          background: var(--color-bg, #0f172a);
+          color: var(--color-text-primary, #f1f5f9);
+          font-size: 0.9rem;
+          outline: none;
+          transition: border-color 0.2s;
+          width: 100%;
+          box-sizing: border-box;
+        }
+        .notes-form-textarea {
+          resize: vertical;
+          min-height: 120px;
+          font-family: inherit;
+          line-height: 1.6;
+        }
+        .notes-form-input:focus,
+        .notes-form-textarea:focus {
+          border-color: var(--color-primary, #6366f1);
+        }
+        .notes-form-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 0.5rem;
+          padding-top: 0.25rem;
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ─── Note Card sub-component ────────────────────────────────────────────────
+function NoteCard({ note, onEdit, onDelete, onPin, onArchive }) {
+  const cardClass = [
+    'note-card',
+    note.pinned && !note.archived ? 'note-card--pinned' : '',
+    note.archived ? 'note-card--archived' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <div className={cardClass}>
+      <div className="note-card-header">
+        <h3 className="note-card-title" title={note.title}>
+          {note.title || 'Untitled'}
+        </h3>
+        {note.pinned && !note.archived && (
+          <Pin size={14} className="note-card-pin-badge" />
+        )}
+      </div>
+
+      <p className="note-card-content">
+        {note.content || <span style={{ fontStyle: 'italic' }}>No content</span>}
+      </p>
+
+      <span className="note-card-meta">
+        {note.updated_at !== note.created_at
+          ? `Updated ${formatDate(note.updated_at)}`
+          : `Created ${formatDate(note.created_at)}`}
+      </span>
+
+      <div className="note-card-actions">
+        {/* Pin */}
+        <button
+          className={`note-card-action-btn${note.pinned ? ' note-card-action-btn--pin-active' : ''}`}
+          title={note.pinned ? 'Unpin' : 'Pin'}
+          onClick={onPin}
+        >
+          <Pin size={15} />
+        </button>
+
+        {/* Archive / Restore */}
+        <button
+          className="note-card-action-btn"
+          title={note.archived ? 'Restore' : 'Archive'}
+          onClick={onArchive}
+        >
+          {note.archived ? <ArchiveX size={15} /> : <Archive size={15} />}
+        </button>
+
+        <span className="note-card-spacer" />
+
+        {/* Edit */}
+        <button
+          className="note-card-action-btn"
+          title="Edit"
+          onClick={onEdit}
+        >
+          <Edit2 size={15} />
+        </button>
+
+        {/* Delete */}
+        <button
+          className="note-card-action-btn note-card-action-btn--delete"
+          title="Delete"
+          onClick={onDelete}
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
     </div>
   );
 }

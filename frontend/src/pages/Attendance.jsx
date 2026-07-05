@@ -1,257 +1,431 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, GraduationCap, Edit2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { Plus, Trash2, GraduationCap, Edit2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { KEYS, getList, setItem, generateId } from '../utils/storage';
+import { addActivity } from '../utils/activity';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Modal from '../components/Modal';
-import Loader from '../components/Loader';
 
-import api from '../services/api';
+/* ─── colour scheme helper ─── */
+function getColorScheme(pct) {
+  if (pct >= 75) {
+    return {
+      color: 'text-success',
+      bg: 'bg-success/10',
+      border: 'border-success/20',
+      fill: '#10B981',
+      ring: 'ring-success',
+    };
+  }
+  if (pct >= 60) {
+    return {
+      color: 'text-warning',
+      bg: 'bg-warning/10',
+      border: 'border-warning/20',
+      fill: '#F59E0B',
+      ring: 'ring-warning',
+    };
+  }
+  return {
+    color: 'text-danger',
+    bg: 'bg-danger/10',
+    border: 'border-danger/20',
+    fill: '#EF4444',
+    ring: 'ring-danger',
+  };
+}
+
+const INITIAL_FORM = { name: '', total_classes: 0, classes_attended: 0 };
 
 export default function Attendance() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isError, setIsError] = useState(false);
-  const [subjects, setSubjects] = useState([]);
+  const [subjects, setSubjects] = useState(() => getList(KEYS.subjects));
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [formData, setFormData] = useState({ name: '', total_classes: 0, classes_attended: 0 });
+  const [formData, setFormData] = useState(INITIAL_FORM);
 
-  useEffect(() => {
-    fetchSubjects();
-  }, []);
-
-  const fetchSubjects = async () => {
-    try {
-      setIsLoading(true);
-      setIsError(false);
-      const res = await api.get('/attendance');
-      setSubjects(res.data);
-    } catch (error) {
-      setIsError(true);
-      toast.error('Failed to fetch attendance data');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleAddSubject = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingId) {
-        if (formData.classes_attended > formData.total_classes) {
-          toast.error("Attended classes cannot be greater than total classes");
-          return;
-        }
-        await api.put(`/attendance/${editingId}`, formData);
-        toast.success('Subject updated');
-      } else {
-        await api.post('/attendance', formData);
-        toast.success('Subject added');
-      }
-      setIsModalOpen(false);
-      setEditingId(null);
-      fetchSubjects();
-    } catch (error) {
-      toast.error(editingId ? 'Failed to update subject' : 'Failed to add subject');
-    }
-  };
-
-  const handleEditSubject = (subject) => {
-    setFormData(subject);
-    setEditingId(subject.id);
+  /* ─── helpers ─── */
+  const openAddModal = () => {
+    setEditingId(null);
+    setFormData(INITIAL_FORM);
     setIsModalOpen(true);
   };
 
-  const handleMarkPresent = async (id) => {
-    try {
-      await api.patch(`/attendance/${id}/present`);
-      toast.success('Marked Present');
-      fetchSubjects();
-    } catch (error) {
-      toast.error('Failed to mark present');
-    }
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingId(null);
+    setFormData(INITIAL_FORM);
   };
 
-  const handleMarkAbsent = async (id) => {
-    try {
-      await api.patch(`/attendance/${id}/absent`);
-      toast.success('Marked as absent');
-      // No need to fetchSubjects since absent doesn't modify anything
-    } catch (error) {
-      toast.error('Failed to mark absent');
-    }
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: name === 'name' ? value : Number(value),
+    }));
   };
 
-  const handleDelete = async (id) => {
-    if(window.confirm('Delete this subject?')) {
-      try {
-        await api.delete(`/attendance/${id}`);
-        toast.success('Subject deleted');
-        fetchSubjects();
-      } catch (error) {
-        toast.error('Failed to delete subject');
-      }
+  /* ─── add / update subject ─── */
+  const handleAddSubject = (e) => {
+    e.preventDefault();
+
+    if (!formData.name.trim()) {
+      toast.error('Subject name is required');
+      return;
     }
+    if (Number(formData.classes_attended) > Number(formData.total_classes)) {
+      toast.error('Classes attended cannot exceed total classes');
+      return;
+    }
+
+    const current = getList(KEYS.subjects);
+
+    if (editingId) {
+      const updated = current.map((s) =>
+        s.id === editingId
+          ? {
+              ...s,
+              name: formData.name,
+              total_classes: Number(formData.total_classes),
+              classes_attended: Number(formData.classes_attended),
+            }
+          : s
+      );
+      setItem(KEYS.subjects, updated);
+      setSubjects(updated);
+      addActivity(`Updated subject: ${formData.name}`);
+      toast.success('Subject updated');
+    } else {
+      const newSubject = {
+        id: generateId(),
+        name: formData.name,
+        total_classes: Number(formData.total_classes),
+        classes_attended: Number(formData.classes_attended),
+      };
+      const updated = [...current, newSubject];
+      setItem(KEYS.subjects, updated);
+      setSubjects(updated);
+      addActivity(`Added subject: ${formData.name}`);
+      toast.success('Subject added');
+    }
+
+    closeModal();
   };
 
-  const totalClasses = subjects.reduce((sum, s) => sum + s.total_classes, 0);
-  const totalAttended = subjects.reduce((sum, s) => sum + s.classes_attended, 0);
-  const overallPercentage = totalClasses === 0 ? 0 : Math.round((totalAttended / totalClasses) * 100);
-  
-  const getColorScheme = (percentage) => {
-    if (percentage >= 75) return { color: 'text-success', bg: 'bg-success/10', border: 'border-success/20', fill: '#10B981', ring: 'ring-success' };
-    if (percentage >= 60) return { color: 'text-warning', bg: 'bg-warning/10', border: 'border-warning/20', fill: '#F59E0B', ring: 'ring-warning' };
-    return { color: 'text-danger', bg: 'bg-danger/10', border: 'border-danger/20', fill: '#EF4444', ring: 'ring-danger' };
+  /* ─── edit ─── */
+  const handleEditSubject = (subject) => {
+    setEditingId(subject.id);
+    setFormData({
+      name: subject.name,
+      total_classes: subject.total_classes,
+      classes_attended: subject.classes_attended,
+    });
+    setIsModalOpen(true);
   };
+
+  /* ─── mark present ─── */
+  const handleMarkPresent = (id) => {
+    const current = getList(KEYS.subjects);
+    const updated = current.map((s) =>
+      s.id === id
+        ? {
+            ...s,
+            total_classes: s.total_classes + 1,
+            classes_attended: s.classes_attended + 1,
+          }
+        : s
+    );
+    setItem(KEYS.subjects, updated);
+    setSubjects(updated);
+    const subject = updated.find((s) => s.id === id);
+    addActivity(`Marked present for subject: ${subject?.name}`);
+    toast.success('Marked Present');
+  };
+
+  /* ─── mark absent ─── */
+  const handleMarkAbsent = (id) => {
+    const current = getList(KEYS.subjects);
+    const updated = current.map((s) =>
+      s.id === id
+        ? { ...s, total_classes: s.total_classes + 1 }
+        : s
+    );
+    setItem(KEYS.subjects, updated);
+    setSubjects(updated);
+    const subject = updated.find((s) => s.id === id);
+    addActivity(`Marked absent for subject: ${subject?.name}`);
+    toast.success('Marked Absent');
+  };
+
+  /* ─── delete ─── */
+  const handleDelete = (id) => {
+    const subject = subjects.find((s) => s.id === id);
+    if (!window.confirm(`Delete "${subject?.name}"?`)) return;
+    const updated = getList(KEYS.subjects).filter((s) => s.id !== id);
+    setItem(KEYS.subjects, updated);
+    setSubjects(updated);
+    toast.success('Subject deleted');
+  };
+
+  /* ─── computed stats ─── */
+  const totalClasses = subjects.reduce((s, sub) => s + (sub.total_classes || 0), 0);
+  const totalAttended = subjects.reduce((s, sub) => s + (sub.classes_attended || 0), 0);
+  const overallPercentage =
+    totalClasses === 0 ? 0 : Math.round((totalAttended / totalClasses) * 100);
 
   const overallScheme = getColorScheme(overallPercentage);
 
-  if (isLoading) {
-    return <Loader text="Loading attendance..." />;
-  }
-
-  if (isError) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-center">
-        <AlertCircle className="w-12 h-12 text-danger mb-4" />
-        <h3 className="text-lg font-bold text-gray-900">Failed to load attendance</h3>
-        <p className="text-gray-500">Please try refreshing the page.</p>
-      </div>
-    );
-  }
-
+  /* ─── render ─── */
   return (
-    <div className="space-y-6 animate-fade-in pb-20">
-      
-      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Attendance Tracker</h2>
-          <p className="text-gray-500 mt-1">Keep your attendance above 75% to stay in the green zone.</p>
+          <h1 className="text-2xl font-bold text-text-primary">Attendance</h1>
+          <p className="text-text-secondary text-sm mt-1">
+            Monitor your attendance across all subjects
+          </p>
         </div>
-        <Button onClick={() => { setFormData({ name: '', total_classes: 0, classes_attended: 0 }); setEditingId(null); setIsModalOpen(true); }}>
-          <Plus size={20} className="mr-2" /> Add Subject
+        <Button onClick={openAddModal} icon={<Plus size={16} />}>
+          Add Subject
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className={`col-span-1 md:col-span-3 flex flex-col md:flex-row items-center p-8 border ${overallScheme.border} ${overallScheme.bg}`}>
-          
-          <div className="relative w-40 h-40 flex-shrink-0">
-            <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
-              <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" className="text-white/50" strokeWidth="12" />
-              <circle 
-                cx="50" cy="50" r="40" 
-                fill="none" 
+      {/* Overview card */}
+      <Card className="p-6">
+        <div className="flex flex-col md:flex-row items-center gap-8">
+          {/* Circular SVG progress ring */}
+          <div className="relative shrink-0">
+            <svg width="160" height="160" className="-rotate-90">
+              {/* Background track */}
+              <circle
+                cx="80"
+                cy="80"
+                r="40"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="10"
+                className="text-bg-secondary"
+                strokeDasharray="251 251"
+              />
+              {/* Progress arc */}
+              <circle
+                cx="80"
+                cy="80"
+                r="40"
+                fill="none"
                 stroke={overallScheme.fill}
-                strokeWidth="12" 
-                strokeDasharray={`${overallPercentage * 2.51} 251`}
+                strokeWidth="10"
                 strokeLinecap="round"
-                className="transition-all duration-1000 ease-out"
+                strokeDasharray={`${overallPercentage * 2.51} 251`}
+                className="transition-all duration-700"
               />
             </svg>
+            {/* Centre label */}
             <div className="absolute inset-0 flex flex-col items-center justify-center">
-              <span className={`text-3xl font-black ${overallScheme.color}`}>{overallPercentage}%</span>
-              <span className="text-xs font-bold text-gray-600">Overall</span>
+              <span className={`text-3xl font-bold ${overallScheme.color}`}>
+                {overallPercentage}%
+              </span>
+              <span className="text-text-secondary text-xs">Overall</span>
             </div>
           </div>
 
-          <div className="mt-6 md:mt-0 md:ml-12 flex-1 w-full">
-            <h3 className="text-2xl font-bold text-gray-900 mb-2">Semester Overview</h3>
-            <p className="text-gray-600 mb-6 max-w-lg">
-              {overallPercentage >= 75 ? "Great job! You are maintaining excellent attendance." 
-              : overallPercentage >= 60 ? "Warning: Your attendance is slipping. Try not to miss any more classes."
-              : "Critical Alert: Your attendance is dangerously low. Please prioritize attending classes."}
-            </p>
-            <div className="flex gap-8">
-              <div>
-                <p className="text-sm font-bold text-gray-500 uppercase">Total Classes</p>
-                <p className="text-2xl font-black text-gray-900">{totalClasses}</p>
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-500 uppercase">Attended</p>
-                <p className="text-2xl font-black text-gray-900">{totalAttended}</p>
+          {/* Semester stats */}
+          <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-4 w-full">
+            <div className={`rounded-xl p-4 ${overallScheme.bg} border ${overallScheme.border}`}>
+              <p className={`text-2xl font-bold ${overallScheme.color}`}>{overallPercentage}%</p>
+              <p className="text-text-secondary text-sm mt-1">Attendance Rate</p>
+            </div>
+            <div className="rounded-xl p-4 bg-bg-secondary border border-border">
+              <p className="text-2xl font-bold text-text-primary">{totalAttended}</p>
+              <p className="text-text-secondary text-sm mt-1">Classes Attended</p>
+            </div>
+            <div className="rounded-xl p-4 bg-bg-secondary border border-border">
+              <p className="text-2xl font-bold text-text-primary">{totalClasses}</p>
+              <p className="text-text-secondary text-sm mt-1">Total Classes</p>
+            </div>
+            <div className="rounded-xl p-4 bg-bg-secondary border border-border">
+              <p className="text-2xl font-bold text-text-primary">{subjects.length}</p>
+              <p className="text-text-secondary text-sm mt-1">Subjects</p>
+            </div>
+            <div className="rounded-xl p-4 bg-bg-secondary border border-border col-span-2 sm:col-span-2">
+              <div className="flex items-center gap-2">
+                {overallPercentage >= 75 ? (
+                  <CheckCircle2 size={16} className="text-success" />
+                ) : (
+                  <AlertCircle size={16} className="text-danger" />
+                )}
+                <p className={`text-sm font-medium ${overallScheme.color}`}>
+                  {overallPercentage >= 75
+                    ? 'Great! You meet the 75% requirement'
+                    : `Need ${Math.max(0, Math.ceil((75 * totalClasses - 100 * totalAttended) / 25))} more classes to reach 75%`}
+                </p>
               </div>
             </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Subject cards */}
+      {subjects.length === 0 ? (
+        <Card className="p-12 flex flex-col items-center justify-center text-center gap-4">
+          <GraduationCap size={48} className="text-text-secondary opacity-40" />
+          <div>
+            <p className="text-text-primary font-medium">No subjects added yet</p>
+            <p className="text-text-secondary text-sm mt-1">
+              Click "Add Subject" to start tracking attendance
+            </p>
           </div>
         </Card>
-
-        {subjects.length === 0 ? (
-          <div className="col-span-1 md:col-span-3 text-center py-12 text-gray-500 bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
-            <GraduationCap className="mx-auto h-12 w-12 text-gray-300 mb-3" />
-            <p className="font-medium text-gray-900">No subjects tracked yet.</p>
-            <p className="text-sm text-gray-400 mt-1">Click the button above to add your first subject.</p>
-          </div>
-        ) : (
-          subjects.map(subject => {
-            const pct = subject.total_classes === 0 ? 0 : Math.round((subject.classes_attended / subject.total_classes) * 100);
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {subjects.map((subject) => {
+            const pct =
+              subject.total_classes === 0
+                ? 0
+                : Math.round((subject.classes_attended / subject.total_classes) * 100);
             const scheme = getColorScheme(pct);
 
             return (
-              <Card key={subject.id} className="relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-4 opacity-0 group-hover:opacity-100 transition-opacity flex space-x-2">
-                  <button onClick={() => handleEditSubject(subject)} className="text-gray-400 hover:text-primary bg-white p-2 rounded-lg shadow-sm border border-gray-100">
-                    <Edit2 size={16} />
-                  </button>
-                  <button onClick={() => handleDelete(subject.id)} className="text-gray-400 hover:text-danger bg-white p-2 rounded-lg shadow-sm border border-gray-100">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-
-                <div className="flex items-center space-x-3 mb-4">
-                  <div className={`p-2 rounded-lg ${scheme.bg} ${scheme.color}`}>
-                    <GraduationCap size={20} />
-                  </div>
-                  <h3 className="font-bold text-gray-900 text-lg truncate pr-16">{subject.name}</h3>
-                </div>
-
-                <div className="flex justify-between items-end mb-2">
+              <Card key={subject.id} className="p-5 group">
+                {/* Subject name + actions */}
+                <div className="flex items-start justify-between gap-2 mb-4">
                   <div>
-                    <span className={`text-3xl font-black ${scheme.color}`}>{pct}%</span>
+                    <h3 className="font-semibold text-text-primary">{subject.name}</h3>
+                    <p className="text-text-secondary text-xs mt-0.5">
+                      {subject.classes_attended} / {subject.total_classes} classes
+                    </p>
                   </div>
-                  <div className="text-right text-sm font-medium text-gray-500">
-                    {subject.classes_attended} / {subject.total_classes}
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => handleEditSubject(subject)}
+                      className="p-1.5 rounded-md hover:bg-primary/10 text-text-secondary hover:text-primary transition-colors"
+                      title="Edit"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(subject.id)}
+                      className="p-1.5 rounded-md hover:bg-danger/10 text-text-secondary hover:text-danger transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 size={14} />
+                    </button>
                   </div>
                 </div>
 
-                <div className="w-full bg-gray-100 rounded-full h-2.5 mb-6">
-                  <div className="h-2.5 rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: scheme.fill }}></div>
+                {/* Percentage label */}
+                <div className="flex items-center justify-between mb-2">
+                  <span className={`text-sm font-semibold ${scheme.color}`}>{pct}%</span>
+                  {pct < 75 && (
+                    <span className="text-xs text-danger flex items-center gap-1">
+                      <AlertCircle size={11} /> Below 75%
+                    </span>
+                  )}
                 </div>
 
-                <div className="flex space-x-2">
-                  <Button variant="outline" className="flex-1 text-sm py-2 hover:bg-success/10 hover:text-success hover:border-success/30 transition-colors" onClick={() => handleMarkPresent(subject.id)}>
-                    <CheckCircle2 size={16} className="mr-1 inline" /> Present
-                  </Button>
-                  <Button variant="outline" className="flex-1 text-sm py-2 hover:bg-danger/10 hover:text-danger hover:border-danger/30 transition-colors" onClick={() => handleMarkAbsent(subject.id)}>
-                    <XCircle size={16} className="mr-1 inline" /> Absent
-                  </Button>
+                {/* Progress bar */}
+                <div className="h-2 rounded-full bg-bg-secondary overflow-hidden mb-4">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{ width: `${pct}%`, backgroundColor: scheme.fill }}
+                  />
                 </div>
 
+                {/* Mark present / absent buttons */}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleMarkPresent(subject.id)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium bg-success/10 text-success hover:bg-success/20 border border-success/20 transition-colors"
+                  >
+                    <CheckCircle2 size={14} />
+                    Present
+                  </button>
+                  <button
+                    onClick={() => handleMarkAbsent(subject.id)}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium bg-danger/10 text-danger hover:bg-danger/20 border border-danger/20 transition-colors"
+                  >
+                    <XCircle size={14} />
+                    Absent
+                  </button>
+                </div>
               </Card>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
 
-      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingId(null); }} title={editingId ? "Edit Subject" : "Add New Subject"}>
+      {/* Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={editingId ? 'Edit Subject' : 'Add Subject'}
+      >
         <form onSubmit={handleAddSubject} className="space-y-4">
+          {/* Subject name */}
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Subject Name</label>
-            <input required type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} className="w-full px-4 py-2 border rounded-xl" placeholder="e.g. Data Structures" />
+            <label className="block text-sm font-medium text-text-primary mb-1">
+              Subject Name <span className="text-danger">*</span>
+            </label>
+            <input
+              type="text"
+              name="name"
+              value={formData.name}
+              onChange={handleChange}
+              placeholder="e.g. Mathematics"
+              className="w-full px-3 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              required
+            />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Total Classes</label>
-              <input required type="number" min="0" value={formData.total_classes} onChange={e => setFormData({...formData, total_classes: parseInt(e.target.value) || 0})} className="w-full px-4 py-2 border rounded-xl" />
-            </div>
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Classes Attended</label>
-              <input required type="number" min="0" max={formData.total_classes} value={formData.classes_attended} onChange={e => setFormData({...formData, classes_attended: parseInt(e.target.value) || 0})} className="w-full px-4 py-2 border rounded-xl" />
-            </div>
+
+          {/* Total classes */}
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">
+              Total Classes
+            </label>
+            <input
+              type="number"
+              name="total_classes"
+              value={formData.total_classes}
+              onChange={handleChange}
+              min={0}
+              className="w-full px-3 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
           </div>
-          <Button type="submit" className="w-full mt-4">Save Subject</Button>
+
+          {/* Classes attended */}
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">
+              Classes Attended
+            </label>
+            <input
+              type="number"
+              name="classes_attended"
+              value={formData.classes_attended}
+              onChange={handleChange}
+              min={0}
+              max={formData.total_classes}
+              className="w-full px-3 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+            {Number(formData.classes_attended) > Number(formData.total_classes) && (
+              <p className="text-danger text-xs mt-1 flex items-center gap-1">
+                <AlertCircle size={11} />
+                Cannot exceed total classes
+              </p>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="ghost" onClick={closeModal}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              {editingId ? 'Save Changes' : 'Add Subject'}
+            </Button>
+          </div>
         </form>
       </Modal>
-
     </div>
   );
 }

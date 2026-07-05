@@ -1,156 +1,194 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, Command, CheckSquare, BookOpen, GraduationCap, StickyNote, X } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Search, X, CheckSquare, BookOpen, GraduationCap, StickyNote } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import api from '../services/api';
+import { KEYS, getList } from '../utils/storage';
 
 export default function GlobalSearch() {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState({ tasks: [], assignments: [], subjects: [], notes: [] });
-  const [isLoading, setIsLoading] = useState(false);
   const inputRef = useRef(null);
   const navigate = useNavigate();
 
+  // Open on Ctrl+K / Cmd+K
   useEffect(() => {
-    const handleKeyDown = (e) => {
+    const handler = (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault();
-        setIsOpen(true);
+        setIsOpen(prev => !prev);
       }
-      if (e.key === 'Escape' && isOpen) {
-        setIsOpen(false);
-      }
+      if (e.key === 'Escape') setIsOpen(false);
     };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen]);
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   useEffect(() => {
-    if (isOpen) {
-      setTimeout(() => inputRef.current?.focus(), 100);
+    if (isOpen && inputRef.current) {
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+    if (!isOpen) {
       setQuery('');
       setResults({ tasks: [], assignments: [], subjects: [], notes: [] });
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (!query.trim()) {
+  const search = useCallback((q) => {
+    if (!q.trim()) {
       setResults({ tasks: [], assignments: [], subjects: [], notes: [] });
       return;
     }
+    const lower = q.toLowerCase();
+    const tasks       = getList(KEYS.tasks).filter(t => t.title?.toLowerCase().includes(lower)).slice(0, 4);
+    const assignments = getList(KEYS.assignments).filter(a => a.title?.toLowerCase().includes(lower) || a.subject?.toLowerCase().includes(lower)).slice(0, 4);
+    const subjects    = getList(KEYS.subjects).filter(s => s.name?.toLowerCase().includes(lower)).slice(0, 4);
+    const notes       = getList(KEYS.notes).filter(n => n.title?.toLowerCase().includes(lower) || n.content?.toLowerCase().includes(lower)).slice(0, 4);
+    setResults({ tasks, assignments, subjects, notes });
+  }, []);
 
-    const timer = setTimeout(async () => {
-      setIsLoading(true);
-      try {
-        const res = await api.get(`/search?q=${encodeURIComponent(query)}`);
-        setResults(res.data);
-      } catch (error) {
-        console.error('Search error', error);
-      } finally {
-        setIsLoading(false);
-      }
-    }, 300);
-
+  useEffect(() => {
+    const timer = setTimeout(() => search(query), 200);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, search]);
 
-  const handleNavigate = (path) => {
-    setIsOpen(false);
+  const hasResults = results.tasks.length > 0 || results.assignments.length > 0 || results.subjects.length > 0 || results.notes.length > 0;
+
+  const navigateTo = (path) => {
     navigate(path);
+    setIsOpen(false);
   };
 
   if (!isOpen) return null;
 
-  const totalResults = results.tasks.length + results.assignments.length + results.subjects.length + results.notes.length;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 sm:pt-32 px-4">
-      <div className="fixed inset-0 bg-gray-900/50 backdrop-blur-sm transition-opacity" onClick={() => setIsOpen(false)}></div>
-      
-      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden animate-fade-in border border-gray-100">
-        <div className="flex items-center px-4 py-4 border-b border-gray-100 bg-gray-50/50">
-          <Search size={20} className="text-gray-400 mr-3 shrink-0" />
+    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-20 px-4" onClick={() => setIsOpen(false)}>
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" />
+
+      {/* Search Panel */}
+      <div className="relative w-full max-w-2xl bg-white rounded-2xl shadow-2xl overflow-hidden border border-gray-100" onClick={e => e.stopPropagation()}>
+        {/* Input */}
+        <div className="flex items-center px-5 py-4 border-b border-gray-100">
+          <Search size={20} className="text-gray-400 mr-3 flex-shrink-0" />
           <input
             ref={inputRef}
             type="text"
-            className="flex-1 bg-transparent border-none outline-none text-gray-900 placeholder-gray-400 text-lg"
-            placeholder="Search tasks, notes, assignments..."
+            placeholder="Search tasks, assignments, notes, subjects..."
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={e => setQuery(e.target.value)}
+            className="flex-1 text-gray-900 text-base outline-none placeholder-gray-400 bg-transparent"
           />
-          {isLoading && <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin ml-3"></div>}
-          <button onClick={() => setIsOpen(false)} className="ml-3 text-gray-400 hover:text-gray-600 p-1 rounded-lg">
-            <X size={20} />
-          </button>
+          {query && (
+            <button onClick={() => setQuery('')} className="text-gray-400 hover:text-gray-600 ml-2">
+              <X size={18} />
+            </button>
+          )}
+          <kbd className="ml-3 hidden md:inline-flex items-center px-2 py-1 text-xs font-medium text-gray-500 bg-gray-100 border border-gray-200 rounded-lg">ESC</kbd>
         </div>
 
-        <div className="max-h-[60vh] overflow-y-auto p-2">
-          {!query.trim() ? (
-            <div className="p-8 text-center text-gray-500">
-              <Command size={48} className="mx-auto mb-4 text-gray-300 opacity-50" />
-              <p>Type to search across CampusPilot.os</p>
-            </div>
-          ) : totalResults === 0 && !isLoading ? (
-            <div className="p-8 text-center text-gray-500">
-              <p>No results found for "{query}"</p>
-            </div>
-          ) : (
-            <div className="space-y-4 p-2">
-              {results.tasks.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-2">Tasks</h3>
-                  {results.tasks.map(task => (
-                    <button key={task.id} onClick={() => handleNavigate('/tasks')} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-100 rounded-lg group">
-                      <CheckSquare size={16} className="text-warning mr-3 opacity-70 group-hover:opacity-100" />
-                      <span className="font-medium text-gray-900 truncate">{task.title}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {results.assignments.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-2 mt-4">Assignments</h3>
-                  {results.assignments.map(asg => (
-                    <button key={asg.id} onClick={() => handleNavigate('/assignments')} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-100 rounded-lg group">
-                      <BookOpen size={16} className="text-primary mr-3 opacity-70 group-hover:opacity-100" />
-                      <span className="font-medium text-gray-900 truncate">{asg.title}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {results.subjects.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-2 mt-4">Subjects</h3>
-                  {results.subjects.map(sub => (
-                    <button key={sub.id} onClick={() => handleNavigate('/attendance')} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-100 rounded-lg group">
-                      <GraduationCap size={16} className="text-success mr-3 opacity-70 group-hover:opacity-100" />
-                      <span className="font-medium text-gray-900 truncate">{sub.title}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {results.notes.length > 0 && (
-                <div>
-                  <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2 px-2 mt-4">Notes</h3>
-                  {results.notes.map(note => (
-                    <button key={note.id} onClick={() => handleNavigate('/notes')} className="w-full flex items-center px-3 py-2 text-left hover:bg-gray-100 rounded-lg group">
-                      <StickyNote size={16} className="text-purple-500 mr-3 opacity-70 group-hover:opacity-100" />
-                      <span className="font-medium text-gray-900 truncate">{note.title}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+        {/* Results */}
+        <div className="max-h-[420px] overflow-y-auto">
+          {!query && (
+            <div className="px-5 py-8 text-center text-gray-400 text-sm">
+              Start typing to search across all your data
             </div>
           )}
+
+          {query && !hasResults && (
+            <div className="px-5 py-8 text-center text-gray-400 text-sm">
+              No results found for "<span className="font-medium text-gray-600">{query}</span>"
+            </div>
+          )}
+
+          {results.tasks.length > 0 && (
+            <ResultSection title="Tasks" icon={<CheckSquare size={14} />}>
+              {results.tasks.map(t => (
+                <ResultItem
+                  key={t.id}
+                  label={t.title}
+                  sub={`${t.category} · ${t.priority} Priority · ${t.status}`}
+                  onClick={() => navigateTo('/tasks')}
+                  strikethrough={t.status === 'completed'}
+                />
+              ))}
+            </ResultSection>
+          )}
+
+          {results.assignments.length > 0 && (
+            <ResultSection title="Assignments" icon={<BookOpen size={14} />}>
+              {results.assignments.map(a => (
+                <ResultItem
+                  key={a.id}
+                  label={a.title}
+                  sub={a.subject}
+                  onClick={() => navigateTo('/assignments')}
+                />
+              ))}
+            </ResultSection>
+          )}
+
+          {results.subjects.length > 0 && (
+            <ResultSection title="Subjects" icon={<GraduationCap size={14} />}>
+              {results.subjects.map(s => {
+                const pct = s.total_classes === 0 ? 0 : Math.round((s.classes_attended / s.total_classes) * 100);
+                return (
+                  <ResultItem
+                    key={s.id}
+                    label={s.name}
+                    sub={`Attendance: ${pct}% (${s.classes_attended}/${s.total_classes})`}
+                    onClick={() => navigateTo('/attendance')}
+                  />
+                );
+              })}
+            </ResultSection>
+          )}
+
+          {results.notes.length > 0 && (
+            <ResultSection title="Notes" icon={<StickyNote size={14} />}>
+              {results.notes.map(n => (
+                <ResultItem
+                  key={n.id}
+                  label={n.title}
+                  sub={n.content?.slice(0, 60) + (n.content?.length > 60 ? '…' : '')}
+                  onClick={() => navigateTo('/notes')}
+                />
+              ))}
+            </ResultSection>
+          )}
         </div>
-        
-        <div className="bg-gray-50 border-t border-gray-100 px-4 py-3 flex items-center justify-between text-xs text-gray-500">
-          <div className="flex items-center gap-4">
-            <span className="flex items-center gap-1">Press <kbd className="font-sans bg-white border border-gray-200 rounded px-1.5 shadow-sm font-bold text-gray-900">Esc</kbd> to close</span>
-          </div>
+
+        {/* Footer */}
+        <div className="px-5 py-3 border-t border-gray-50 flex items-center justify-between text-xs text-gray-400">
+          <span>Press <kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500 font-medium">↵</kbd> to navigate</span>
+          <span><kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500 font-medium">Ctrl+K</kbd> to toggle</span>
         </div>
       </div>
     </div>
+  );
+}
+
+function ResultSection({ title, icon, children }) {
+  return (
+    <div className="py-2">
+      <div className="flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-gray-400 uppercase tracking-wider">
+        {icon}
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ResultItem({ label, sub, onClick, strikethrough }) {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full text-left px-5 py-3 hover:bg-primary/5 transition-colors flex flex-col"
+    >
+      <span className={`text-sm font-medium text-gray-900 ${strikethrough ? 'line-through text-gray-400' : ''}`}>
+        {label}
+      </span>
+      {sub && <span className="text-xs text-gray-400 mt-0.5">{sub}</span>}
+    </button>
   );
 }

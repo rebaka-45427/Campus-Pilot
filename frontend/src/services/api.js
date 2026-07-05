@@ -1,25 +1,7 @@
-import axios from "axios";
-import toast from "react-hot-toast";
+// api.js is no longer used in the localStorage-based version of CampusPilot.
+// All data is stored and read from localStorage via src/utils/storage.js.
+// This file is kept as a placeholder to avoid breaking any unused imports
+// during the transition. It can be safely deleted.
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || "https://campus-pilot.onrender.com";
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  headers: {
-    "Content-Type": "application/json",
-  },
-});
-
-// Response interceptor - Handle network errors
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (!error.response) {
-      // Network failure / Cannot connect to server
-      toast.error("Cannot connect to server.");
-    }
-    return Promise.reject(error);
-  }
-);
-
+const api = {};
 export default api;

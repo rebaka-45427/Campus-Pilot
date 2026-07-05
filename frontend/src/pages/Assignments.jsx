@@ -1,235 +1,410 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Calendar, Clock, BookOpen, AlertCircle, CheckCircle2, Edit2, Check } from 'lucide-react';
-import { format, differenceInDays, isPast } from 'date-fns';
+import { useState } from 'react';
 import toast from 'react-hot-toast';
+import { Plus, Trash2, Edit2, BookOpen, Clock, CheckCircle2, AlertCircle } from 'lucide-react';
+import { format } from 'date-fns';
+import { KEYS, getList, setItem, generateId } from '../utils/storage';
+import { addActivity } from '../utils/activity';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Badge from '../components/Badge';
 import Modal from '../components/Modal';
-import Loader from '../components/Loader';
-import api from '../services/api';
+
+const FILTERS = ['All', 'Pending', 'In Progress', 'Submitted'];
+
+const STATUS_FILTER_MAP = {
+  'Pending': 'pending',
+  'In Progress': 'in_progress',
+  'Submitted': 'submitted',
+};
+
+const STATUS_BADGE_VARIANT = {
+  submitted: 'success',
+  pending: 'warning',
+  in_progress: 'primary',
+  late: 'danger',
+};
+
+const PRIORITY_BADGE_VARIANT = {
+  High: 'danger',
+  Medium: 'warning',
+  Low: 'primary',
+};
+
+const INITIAL_FORM = {
+  title: '',
+  subject: '',
+  priority: 'Medium',
+  status: 'pending',
+  due_date: '',
+  description: '',
+};
 
 export default function Assignments() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isError, setIsError] = useState(false);
-  const [assignments, setAssignments] = useState([]);
+  const [assignments, setAssignments] = useState(() => getList(KEYS.assignments));
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingId, setEditingId] = useState(null);
-  const [formData, setFormData] = useState({ subject: '', title: '', description: '', priority: 'Medium', deadline: '' });
+  const [editingAssignment, setEditingAssignment] = useState(null);
+  const [formData, setFormData] = useState(INITIAL_FORM);
 
-  useEffect(() => {
-    fetchAssignments();
-  }, []);
-
-  const fetchAssignments = async () => {
-    try {
-      setIsLoading(true);
-      setIsError(false);
-      const res = await api.get('/assignments');
-      setAssignments(res.data);
-    } catch (error) {
-      setIsError(true);
-      toast.error('Failed to load assignments');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    try {
-      const payload = {
-        ...formData,
-        deadline: new Date(formData.deadline).toISOString(),
-      };
-      
-      if (editingId) {
-        await api.put(`/assignments/${editingId}`, payload);
-        toast.success('Assignment updated');
-      } else {
-        await api.post('/assignments', { ...payload, status: 'Pending' });
-        toast.success('Assignment created');
-      }
-      setIsModalOpen(false);
-      setEditingId(null);
-      fetchAssignments();
-    } catch (error) {
-      toast.error(editingId ? 'Failed to update assignment' : 'Failed to create assignment');
-    }
-  };
-
-  const handleEdit = (assignment) => {
-    setFormData({
-      subject: assignment.subject,
-      title: assignment.title,
-      description: assignment.description || '',
-      priority: assignment.priority || 'Medium',
-      deadline: new Date(assignment.deadline).toISOString().slice(0, 16)
-    });
-    setEditingId(assignment.id);
+  /* ─── helpers ─── */
+  const openAddModal = () => {
+    setEditingAssignment(null);
+    setFormData(INITIAL_FORM);
     setIsModalOpen(true);
   };
 
-  const handleMarkComplete = async (id) => {
-    try {
-      await api.put(`/assignments/${id}`, { status: 'Completed' });
-      toast.success('Assignment marked as completed');
-      fetchAssignments();
-    } catch (error) {
-      toast.error('Failed to update assignment');
+  const openEditModal = (assignment) => {
+    setEditingAssignment(assignment);
+    setFormData({
+      title: assignment.title,
+      subject: assignment.subject,
+      priority: assignment.priority,
+      status: assignment.status,
+      due_date: assignment.due_date,
+      description: assignment.description,
+    });
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setEditingAssignment(null);
+    setFormData(INITIAL_FORM);
+  };
+
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  /* ─── submit (create / update) ─── */
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.title.trim()) {
+      toast.error('Title is required');
+      return;
     }
-  };
 
-  const handleDelete = async (id) => {
-    if(window.confirm('Delete this assignment?')) {
-      try {
-        await api.delete(`/assignments/${id}`);
-        toast.success('Assignment deleted');
-        fetchAssignments();
-      } catch (error) {
-        toast.error('Failed to delete assignment');
-      }
+    const current = getList(KEYS.assignments);
+
+    if (editingAssignment) {
+      const updated = current.map((a) =>
+        a.id === editingAssignment.id ? { ...a, ...formData } : a
+      );
+      setItem(KEYS.assignments, updated);
+      setAssignments(updated);
+      addActivity(`Updated assignment: ${formData.title}`);
+      toast.success('Assignment updated');
+    } else {
+      const newAssignment = {
+        id: generateId(),
+        ...formData,
+        created_at: new Date().toISOString(),
+      };
+      const updated = [newAssignment, ...current];
+      setItem(KEYS.assignments, updated);
+      setAssignments(updated);
+      addActivity(`Added assignment: ${formData.title}`);
+      toast.success('Assignment added');
     }
+
+    closeModal();
   };
 
-  const calculateStatus = (deadline, status) => {
-    if (status === 'Completed') return { text: 'Completed', color: 'success', icon: CheckCircle2 };
-    if (isPast(new Date(deadline))) return { text: 'Late', color: 'danger', icon: AlertCircle };
-    return { text: 'Pending', color: 'warning', icon: Clock };
+  /* ─── delete ─── */
+  const deleteAssignment = (assignment) => {
+    if (!window.confirm(`Delete "${assignment.title}"?`)) return;
+    const updated = getList(KEYS.assignments).filter((a) => a.id !== assignment.id);
+    setItem(KEYS.assignments, updated);
+    setAssignments(updated);
+    addActivity(`Deleted assignment: ${assignment.title}`);
+    toast.success('Assignment deleted');
   };
 
-  if (isLoading) {
-    return <Loader text="Loading assignments..." />;
-  }
+  /* ─── derived ─── */
+  const now = new Date();
 
-  if (isError) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-center">
-        <AlertCircle className="w-12 h-12 text-danger mb-4" />
-        <h3 className="text-lg font-bold text-gray-900">Failed to load assignments</h3>
-        <p className="text-gray-500">Please try refreshing the page.</p>
-      </div>
-    );
-  }
+  const filteredAssignments = assignments.filter((a) => {
+    const matchSearch =
+      a.title?.toLowerCase().includes(search.toLowerCase()) ||
+      a.subject?.toLowerCase().includes(search.toLowerCase());
+    const matchFilter =
+      filter === 'All' || a.status === STATUS_FILTER_MAP[filter];
+    return matchSearch && matchFilter;
+  });
 
+  const totalCount = assignments.length;
+  const pendingCount = assignments.filter((a) => a.status === 'pending').length;
+  const submittedCount = assignments.filter((a) => a.status === 'submitted').length;
+
+  const isOverdue = (a) =>
+    a.due_date && new Date(a.due_date) < now && a.status !== 'submitted';
+
+  /* ─── render ─── */
   return (
-    <div className="space-y-6 animate-fade-in pb-20">
-      
-      <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
+    <div className="p-6 space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Assignments</h2>
-          <p className="text-gray-500 mt-1">Keep track of your deadlines.</p>
+          <h1 className="text-2xl font-bold text-text-primary">Assignments</h1>
+          <p className="text-text-secondary text-sm mt-1">
+            Track and manage your academic assignments
+          </p>
         </div>
-        <Button onClick={() => { setFormData({ subject: '', title: '', description: '', priority: 'Medium', deadline: '' }); setEditingId(null); setIsModalOpen(true); }}>
-          <Plus size={20} className="mr-2" /> Add Assignment
+        <Button onClick={openAddModal} icon={<Plus size={16} />}>
+          Add Assignment
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {assignments.length === 0 ? (
-          <div className="col-span-full text-center py-12 text-gray-500 bg-gray-50 rounded-2xl border border-gray-100 border-dashed">
-            <BookOpen className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">No assignments yet.</p>
-            <p className="text-sm text-gray-400 mt-1">Click the button above to add one.</p>
+      {/* Summary stats */}
+      <div className="grid grid-cols-3 gap-4">
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-bold text-text-primary">{totalCount}</p>
+          <p className="text-xs text-text-secondary mt-1">Total</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-bold text-warning">{pendingCount}</p>
+          <p className="text-xs text-text-secondary mt-1">Pending</p>
+        </Card>
+        <Card className="p-4 text-center">
+          <p className="text-2xl font-bold text-success">{submittedCount}</p>
+          <p className="text-xs text-text-secondary mt-1">Submitted</p>
+        </Card>
+      </div>
+
+      {/* Search + Filter */}
+      <div className="flex flex-col sm:flex-row gap-3">
+        <input
+          type="text"
+          placeholder="Search by title or subject…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="flex-1 px-4 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary/40"
+        />
+        <div className="flex gap-2 flex-wrap">
+          {FILTERS.map((f) => (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                filter === f
+                  ? 'bg-primary text-white'
+                  : 'bg-bg-secondary text-text-secondary hover:text-text-primary border border-border'
+              }`}
+            >
+              {f}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Assignment list */}
+      {filteredAssignments.length === 0 ? (
+        <Card className="p-12 flex flex-col items-center justify-center text-center gap-4">
+          <BookOpen size={48} className="text-text-secondary opacity-40" />
+          <div>
+            <p className="text-text-primary font-medium">No assignments found</p>
+            <p className="text-text-secondary text-sm mt-1">
+              {search || filter !== 'All'
+                ? 'Try adjusting your search or filter'
+                : 'Click "Add Assignment" to get started'}
+            </p>
           </div>
-        ) : (
-          assignments.map(assignment => {
-            const date = new Date(assignment.deadline);
-            const daysLeft = differenceInDays(date, new Date());
-            const statusInfo = calculateStatus(date, assignment.status);
-            const StatusIcon = statusInfo.icon;
-
+        </Card>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {filteredAssignments.map((assignment) => {
+            const overdue = isOverdue(assignment);
             return (
-              <Card key={assignment.id} className={`relative group overflow-hidden ${statusInfo.text === 'Completed' ? 'opacity-70 grayscale' : 'hover:border-primary/30'}`}>
-                <div className="absolute top-4 right-4 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  {statusInfo.text !== 'Completed' && (
-                    <button onClick={() => handleEdit(assignment)} className="p-2 bg-white border border-gray-100 text-gray-400 hover:text-primary shadow-sm rounded-lg transition-colors">
-                      <Edit2 size={16} />
-                    </button>
-                  )}
-                  <button onClick={() => handleDelete(assignment.id)} className="p-2 bg-white border border-gray-100 text-gray-400 hover:text-danger shadow-sm rounded-lg transition-colors">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-
-                <div className="flex items-start space-x-3 mb-4">
-                  <div className="p-2.5 bg-primary/10 text-primary rounded-xl mt-1">
-                    <BookOpen size={20} />
-                  </div>
-                  <div>
-                    <div className="flex space-x-2 mb-1">
-                      <Badge variant="gray">{assignment.subject}</Badge>
-                      <Badge variant={assignment.priority === 'High' ? 'danger' : assignment.priority === 'Medium' ? 'warning' : 'success'}>{assignment.priority}</Badge>
-                    </div>
-                    <h3 className="font-bold text-gray-900 leading-tight pr-16">{assignment.title}</h3>
-                    {assignment.description && <p className="text-sm text-gray-500 mt-1 line-clamp-2 pr-4">{assignment.description}</p>}
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-3 mt-6 p-4 bg-gray-50 rounded-xl border border-gray-100">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="text-gray-500 flex items-center">
-                      <Calendar size={14} className="mr-1.5" /> Deadline
-                    </span>
-                    <span className="font-bold text-gray-900">{format(date, 'MMM do, yyyy')}</span>
-                  </div>
-                  <div className="flex justify-between items-center text-sm pt-2 border-t border-gray-200/50">
-                    <span className="text-gray-500 flex items-center">
-                      <StatusIcon size={14} className={`mr-1.5 text-${statusInfo.color}`} /> Status
-                    </span>
-                    <Badge variant={statusInfo.color}>{statusInfo.text}</Badge>
-                  </div>
-                </div>
-
-                {statusInfo.text === 'Pending' && (
-                  <div className={`mt-4 text-center text-sm font-bold p-2 rounded-lg ${daysLeft <= 2 ? 'bg-danger/10 text-danger' : daysLeft <= 5 ? 'bg-warning/10 text-warning' : 'bg-success/10 text-success'}`}>
-                    {daysLeft === 0 ? 'Due Today!' : daysLeft < 0 ? 'Past Due' : `${daysLeft} days remaining`}
+              <Card
+                key={assignment.id}
+                className="p-5 group relative hover:shadow-lg transition-shadow"
+              >
+                {/* Overdue indicator */}
+                {overdue && (
+                  <div className="flex items-center gap-1 text-danger text-xs font-semibold mb-2">
+                    <AlertCircle size={13} />
+                    Overdue
                   </div>
                 )}
 
-                {statusInfo.text !== 'Completed' && (
-                  <Button variant="outline" className="w-full mt-4 hover:bg-success/10 hover:text-success hover:border-success/30 transition-colors" onClick={() => handleMarkComplete(assignment.id)}>
-                    <Check size={16} className="mr-2" /> Mark Completed
-                  </Button>
+                {/* Title row */}
+                <div className="flex items-start justify-between gap-2">
+                  <h3 className="font-semibold text-text-primary leading-tight line-clamp-2">
+                    {assignment.title}
+                  </h3>
+                  {/* Action buttons (hover reveal) */}
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                    <button
+                      onClick={() => openEditModal(assignment)}
+                      className="p-1.5 rounded-md hover:bg-primary/10 text-text-secondary hover:text-primary transition-colors"
+                      title="Edit"
+                    >
+                      <Edit2 size={14} />
+                    </button>
+                    <button
+                      onClick={() => deleteAssignment(assignment)}
+                      className="p-1.5 rounded-md hover:bg-danger/10 text-text-secondary hover:text-danger transition-colors"
+                      title="Delete"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Subject */}
+                {assignment.subject && (
+                  <p className="text-text-secondary text-sm mt-1">{assignment.subject}</p>
+                )}
+
+                {/* Badges */}
+                <div className="flex flex-wrap gap-2 mt-3">
+                  <Badge variant={STATUS_BADGE_VARIANT[assignment.status] || 'primary'}>
+                    {assignment.status === 'in_progress'
+                      ? 'In Progress'
+                      : assignment.status.charAt(0).toUpperCase() + assignment.status.slice(1)}
+                  </Badge>
+                  <Badge variant={PRIORITY_BADGE_VARIANT[assignment.priority] || 'primary'}>
+                    {assignment.priority}
+                  </Badge>
+                </div>
+
+                {/* Due date */}
+                {assignment.due_date && (
+                  <div className="flex items-center gap-1.5 mt-3 text-xs text-text-secondary">
+                    <Clock size={12} />
+                    <span>
+                      Due {format(new Date(assignment.due_date), 'MMM d, yyyy')}
+                    </span>
+                  </div>
+                )}
+
+                {/* Description preview */}
+                {assignment.description && (
+                  <p className="text-text-secondary text-xs mt-2 line-clamp-2">
+                    {assignment.description}
+                  </p>
                 )}
               </Card>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      )}
 
-      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); setEditingId(null); }} title={editingId ? "Edit Assignment" : "New Assignment"}>
-        <form onSubmit={handleAdd} className="space-y-4">
+      {/* Modal */}
+      <Modal
+        isOpen={isModalOpen}
+        onClose={closeModal}
+        title={editingAssignment ? 'Edit Assignment' : 'Add Assignment'}
+      >
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Title */}
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">
+              Title <span className="text-danger">*</span>
+            </label>
+            <input
+              type="text"
+              name="title"
+              value={formData.title}
+              onChange={handleChange}
+              placeholder="Assignment title"
+              className="w-full px-3 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              required
+            />
+          </div>
+
+          {/* Subject */}
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">
+              Subject
+            </label>
+            <input
+              type="text"
+              name="subject"
+              value={formData.subject}
+              onChange={handleChange}
+              placeholder="e.g. Mathematics"
+              className="w-full px-3 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+          </div>
+
+          {/* Priority + Status */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Subject</label>
-              <input required type="text" value={formData.subject} onChange={e => setFormData({...formData, subject: e.target.value})} className="w-full px-4 py-2 border rounded-xl" placeholder="e.g. Physics" />
+              <label className="block text-sm font-medium text-text-primary mb-1">
+                Priority
+              </label>
+              <select
+                name="priority"
+                value={formData.priority}
+                onChange={handleChange}
+                className="w-full px-3 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <option value="Low">Low</option>
+                <option value="Medium">Medium</option>
+                <option value="High">High</option>
+              </select>
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Priority</label>
-              <select value={formData.priority} onChange={e => setFormData({...formData, priority: e.target.value})} className="w-full px-4 py-2 border rounded-xl bg-white">
-                <option value="High">High</option>
-                <option value="Medium">Medium</option>
-                <option value="Low">Low</option>
+              <label className="block text-sm font-medium text-text-primary mb-1">
+                Status
+              </label>
+              <select
+                name="status"
+                value={formData.status}
+                onChange={handleChange}
+                className="w-full px-3 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+              >
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="submitted">Submitted</option>
+                <option value="late">Late</option>
               </select>
             </div>
           </div>
+
+          {/* Due date */}
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Title</label>
-            <input required type="text" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} className="w-full px-4 py-2 border rounded-xl" placeholder="e.g. Chapter 4 Questions" />
+            <label className="block text-sm font-medium text-text-primary mb-1">
+              Due Date
+            </label>
+            <input
+              type="date"
+              name="due_date"
+              value={formData.due_date}
+              onChange={handleChange}
+              className="w-full px-3 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
           </div>
+
+          {/* Description */}
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Description (Optional)</label>
-            <textarea value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full px-4 py-2 border rounded-xl h-20 resize-none" placeholder="Add extra details..."></textarea>
+            <label className="block text-sm font-medium text-text-primary mb-1">
+              Description
+            </label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleChange}
+              placeholder="Add notes or details…"
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg bg-bg-secondary border border-border text-text-primary placeholder:text-text-secondary focus:outline-none focus:ring-2 focus:ring-primary/40 resize-none"
+            />
           </div>
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Deadline</label>
-            <input required type="datetime-local" value={formData.deadline} onChange={e => setFormData({...formData, deadline: e.target.value})} className="w-full px-4 py-2 border rounded-xl" />
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 pt-2">
+            <Button type="button" variant="ghost" onClick={closeModal}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              {editingAssignment ? 'Save Changes' : 'Add Assignment'}
+            </Button>
           </div>
-          <Button type="submit" className="w-full mt-4">{editingId ? "Update Assignment" : "Save Assignment"}</Button>
         </form>
       </Modal>
-
     </div>
   );
 }

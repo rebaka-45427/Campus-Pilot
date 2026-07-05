@@ -1,194 +1,272 @@
-import React, { useState, useEffect } from 'react';
-import { UserCircle, Mail, School, Building, Calendar, Lock, CheckCircle, BookOpen, GraduationCap, AlertCircle } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
 import toast from 'react-hot-toast';
+import {
+  UserCircle, Mail, School, Building, Calendar,
+  Lock, CheckCircle, BookOpen, GraduationCap
+} from 'lucide-react';
+import { KEYS, getList, getItem, setItem } from '../utils/storage';
 import Card from '../components/Card';
 import Button from '../components/Button';
 import Badge from '../components/Badge';
-import Loader from '../components/Loader';
-import api from '../services/api';
+
+const DEFAULT_PROFILE = {
+  username: 'Rebaka Jesi',
+  email: 'rebaka@example.com',
+  college: '',
+  department: '',
+  year: '',
+};
+
+function getInitials(name = '') {
+  return name
+    .split(' ')
+    .map(w => w[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
 
 export default function Profile() {
-  const [isLoading, setIsLoading] = useState(true);
-  const [isError, setIsError] = useState(false);
-  const [user, setUser] = useState({
-    username: '',
-    email: '',
-    college: '',
-    department: '',
-    year: ''
-  });
-  
-  const [passwordForm, setPasswordForm] = useState({
-    password: '',
-    confirmPassword: ''
-  });
+  const [user, setUser] = useState(() => getItem(KEYS.profile, DEFAULT_PROFILE));
+  const [passwordForm, setPasswordForm] = useState({ password: '', confirmPassword: '' });
 
-  const [stats, setStats] = useState({
-    completedTasks: 0,
-    attendanceRate: 0,
-    productivityScore: 0
-  });
+  // Inline stats — not stored in state
+  const stats = useMemo(() => {
+    const tasks = getList(KEYS.tasks);
+    const subjects = getList(KEYS.subjects);
 
-  useEffect(() => {
-    fetchProfile();
+    const completedTasks = tasks.filter(t => t.status === 'completed').length;
+    const totalClasses = subjects.reduce((s, sub) => s + (sub.total_classes || 0), 0);
+    const totalAttended = subjects.reduce((s, sub) => s + (sub.classes_attended || 0), 0);
+    const attendanceRate =
+      totalClasses === 0 ? 0 : Math.round((totalAttended / totalClasses) * 100);
+    const productivityScore =
+      tasks.length === 0 ? 0 : Math.round((completedTasks / tasks.length) * 100);
+
+    return { completedTasks, attendanceRate, productivityScore };
   }, []);
 
-  const fetchProfile = async () => {
-    try {
-      setIsLoading(true);
-      setIsError(false);
-      
-      const currentUser = {
-        id: 1,
-        username: "Rebaka Jesi",
-        email: "rebaka@example.com",
-        college: "Example University",
-        department: "Computer Science",
-        year: "Senior"
-      };
-      
-      const analyticsRes = await api.get('/analytics');
-      
-      setUser(currentUser);
-      const data = analyticsRes.data.stats;
-      setStats({
-        completedTasks: data.completedTasks,
-        attendanceRate: data.attendanceRate,
-        productivityScore: data.productivityScore
-      });
-    } catch (error) {
-      setIsError(true);
-      toast.error('Failed to load profile');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleUpdateProfile = async (e) => {
+  const handleUpdateProfile = (e) => {
     e.preventDefault();
-    try {
-      const payload = { ...user };
-      if (passwordForm.password) {
-        if (passwordForm.password !== passwordForm.confirmPassword) {
-          return toast.error("Passwords don't match");
-        }
-        payload.password = passwordForm.password;
+
+    // Validate password match if entered
+    if (passwordForm.password || passwordForm.confirmPassword) {
+      if (passwordForm.password !== passwordForm.confirmPassword) {
+        toast.error('Passwords do not match');
+        return;
       }
-      
-      setUser(payload);
-      setPasswordForm({ password: '', confirmPassword: '' });
-      toast.success('Profile updated successfully');
-    } catch (error) {
-      toast.error('Failed to update profile');
+      if (passwordForm.password.length < 6) {
+        toast.error('Password must be at least 6 characters');
+        return;
+      }
     }
+
+    const payload = { ...user };
+    setItem(KEYS.profile, payload);
+    setUser(payload);
+    setPasswordForm({ password: '', confirmPassword: '' });
+    toast.success('Profile updated successfully');
   };
-
-  if (isLoading) {
-    return <Loader text="Loading profile..." />;
-  }
-
-  if (isError) {
-    return (
-      <div className="flex flex-col items-center justify-center p-12 text-center">
-        <AlertCircle className="w-12 h-12 text-danger mb-4" />
-        <h3 className="text-lg font-bold text-gray-900">Failed to load profile</h3>
-        <p className="text-gray-500">Please try refreshing the page.</p>
-      </div>
-    );
-  }
 
   return (
-    <div className="space-y-6 animate-fade-in pb-20 max-w-4xl mx-auto">
-      
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Your Profile</h2>
-        <p className="text-gray-500 mt-1">Manage your account settings.</p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+          <UserCircle className="w-6 h-6 text-purple-400" />
+          Profile
+        </h1>
+        <p className="text-gray-400 mt-1 text-sm">Manage your personal information</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-1 space-y-6">
-          <Card className="flex flex-col items-center justify-center p-8 text-center relative overflow-hidden bg-gradient-to-b from-primary/5 to-transparent border-primary/10">
-            <div className="w-24 h-24 bg-primary text-white rounded-full flex items-center justify-center text-3xl font-black shadow-lg mb-4">
-              {user.username ? user.username.charAt(0).toUpperCase() : 'U'}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Left column: Avatar + Stats */}
+        <div className="space-y-4">
+          <Card className="p-6 flex flex-col items-center text-center space-y-4">
+            {/* Avatar */}
+            <div className="relative">
+              <div className="w-24 h-24 rounded-full bg-gradient-to-br from-purple-500 to-indigo-600
+                flex items-center justify-center text-3xl font-bold text-white shadow-lg shadow-purple-500/30">
+                {getInitials(user.username)}
+              </div>
+              <div className="absolute bottom-0 right-0 w-6 h-6 bg-green-500 rounded-full border-2 border-gray-900" />
             </div>
-            <h3 className="text-xl font-bold text-gray-900">{user.username}</h3>
-            <p className="text-gray-500 text-sm mt-1">{user.email || 'No email set'}</p>
-            <Badge variant="primary" className="mt-4">Member</Badge>
 
-            <div className="w-full mt-6 space-y-3 pt-6 border-t border-primary/10 text-left">
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-500 flex items-center"><CheckCircle size={16} className="mr-2 text-success" /> Tasks Done</span>
-                <span className="font-bold text-gray-900">{stats.completedTasks}</span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-500 flex items-center"><GraduationCap size={16} className="mr-2 text-primary" /> Attendance</span>
-                <span className="font-bold text-gray-900">{stats.attendanceRate}%</span>
-              </div>
-              <div className="flex justify-between items-center text-sm">
-                <span className="text-gray-500 flex items-center"><BookOpen size={16} className="mr-2 text-warning" /> Prod. Score</span>
-                <span className="font-bold text-gray-900">{stats.productivityScore}%</span>
-              </div>
+            <div>
+              <h2 className="text-white font-bold text-lg">{user.username || 'Student'}</h2>
+              <p className="text-gray-400 text-sm">{user.email}</p>
+              {user.college && (
+                <p className="text-gray-500 text-xs mt-0.5">{user.college}</p>
+              )}
             </div>
+
+            <Badge variant="purple">Student</Badge>
           </Card>
-          
+
+          {/* Stats */}
+          <Card className="p-5 space-y-3">
+            <h3 className="text-white font-semibold text-sm mb-1">Your Stats</h3>
+            {[
+              {
+                label: 'Tasks Done',
+                value: stats.completedTasks,
+                icon: <CheckCircle className="w-4 h-4 text-green-400" />,
+                color: 'text-green-400',
+              },
+              {
+                label: 'Attendance',
+                value: `${stats.attendanceRate}%`,
+                icon: <GraduationCap className="w-4 h-4 text-blue-400" />,
+                color: 'text-blue-400',
+              },
+              {
+                label: 'Prod. Score',
+                value: `${stats.productivityScore}%`,
+                icon: <BookOpen className="w-4 h-4 text-purple-400" />,
+                color: 'text-purple-400',
+              },
+            ].map(({ label, value, icon, color }) => (
+              <div key={label} className="flex items-center justify-between py-1.5 border-b border-gray-700/50 last:border-0">
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  {icon} {label}
+                </div>
+                <span className={`font-bold text-sm ${color}`}>{value}</span>
+              </div>
+            ))}
+          </Card>
         </div>
 
-        <div className="md:col-span-2">
-          <Card>
-            <form onSubmit={handleUpdateProfile} className="space-y-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-100 pb-2">Personal Information</h3>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Right column: Form */}
+        <div className="lg:col-span-2">
+          <form onSubmit={handleUpdateProfile} className="space-y-5">
+            {/* Personal Information */}
+            <Card className="p-5 space-y-4">
+              <h3 className="text-white font-semibold flex items-center gap-2">
+                <UserCircle className="w-4 h-4 text-purple-400" /> Personal Information
+              </h3>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center"><UserCircle size={16} className="mr-1 text-gray-400" /> Username</label>
-                  <input type="text" value={user.username} disabled className="w-full px-4 py-2 border border-gray-200 bg-gray-50 text-gray-500 rounded-xl" />
-                  <p className="text-xs text-gray-400 mt-1">Username cannot be changed</p>
+                  <label className="block text-sm text-gray-400 mb-1.5 flex items-center gap-1">
+                    <UserCircle className="w-3.5 h-3.5" /> Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={user.username || ''}
+                    onChange={e => setUser(prev => ({ ...prev, username: e.target.value }))}
+                    placeholder="Your full name"
+                    className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm
+                      placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                  />
                 </div>
+
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center"><Mail size={16} className="mr-1 text-gray-400" /> Email</label>
-                  <input type="email" value={user.email || ''} onChange={e => setUser({...user, email: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                  <label className="block text-sm text-gray-400 mb-1.5 flex items-center gap-1">
+                    <Mail className="w-3.5 h-3.5" /> Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={user.email || ''}
+                    onChange={e => setUser(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="your@email.com"
+                    className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm
+                      placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                  />
                 </div>
+
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center"><School size={16} className="mr-1 text-gray-400" /> College</label>
-                  <input type="text" value={user.college || ''} onChange={e => setUser({...user, college: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                  <label className="block text-sm text-gray-400 mb-1.5 flex items-center gap-1">
+                    <School className="w-3.5 h-3.5" /> College / University
+                  </label>
+                  <input
+                    type="text"
+                    value={user.college || ''}
+                    onChange={e => setUser(prev => ({ ...prev, college: e.target.value }))}
+                    placeholder="Your college name"
+                    className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm
+                      placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                  />
                 </div>
+
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center"><Building size={16} className="mr-1 text-gray-400" /> Department</label>
-                  <input type="text" value={user.department || ''} onChange={e => setUser({...user, department: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                  <label className="block text-sm text-gray-400 mb-1.5 flex items-center gap-1">
+                    <Building className="w-3.5 h-3.5" /> Department
+                  </label>
+                  <input
+                    type="text"
+                    value={user.department || ''}
+                    onChange={e => setUser(prev => ({ ...prev, department: e.target.value }))}
+                    placeholder="e.g. Computer Science"
+                    className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm
+                      placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                  />
                 </div>
+
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center"><Calendar size={16} className="mr-1 text-gray-400" /> Year</label>
-                  <select value={user.year || ''} onChange={e => setUser({...user, year: e.target.value})} className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all">
-                    <option value="">Select Year</option>
-                    <option value="Freshman">Freshman</option>
-                    <option value="Sophomore">Sophomore</option>
-                    <option value="Junior">Junior</option>
-                    <option value="Senior">Senior</option>
-                    <option value="Graduate">Graduate</option>
+                  <label className="block text-sm text-gray-400 mb-1.5 flex items-center gap-1">
+                    <Calendar className="w-3.5 h-3.5" /> Year of Study
+                  </label>
+                  <select
+                    value={user.year || ''}
+                    onChange={e => setUser(prev => ({ ...prev, year: e.target.value }))}
+                    className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm
+                      focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                  >
+                    <option value="">Select year</option>
+                    <option value="1">1st Year</option>
+                    <option value="2">2nd Year</option>
+                    <option value="3">3rd Year</option>
+                    <option value="4">4th Year</option>
+                    <option value="5">5th Year</option>
+                    <option value="pg">Post Graduate</option>
                   </select>
                 </div>
               </div>
+            </Card>
 
-              <h3 className="text-lg font-bold text-gray-900 mb-4 border-b border-gray-100 pb-2 mt-8 pt-4">Change Password</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Change Password */}
+            <Card className="p-5 space-y-4">
+              <h3 className="text-white font-semibold flex items-center gap-2">
+                <Lock className="w-4 h-4 text-purple-400" /> Change Password
+              </h3>
+              <p className="text-gray-500 text-xs">Leave blank to keep your current password.</p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center"><Lock size={16} className="mr-1 text-gray-400" /> New Password</label>
-                  <input type="password" value={passwordForm.password} onChange={e => setPasswordForm({...passwordForm, password: e.target.value})} placeholder="Leave blank to keep current" className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                  <label className="block text-sm text-gray-400 mb-1.5">New Password</label>
+                  <input
+                    type="password"
+                    value={passwordForm.password}
+                    onChange={e => setPasswordForm(prev => ({ ...prev, password: e.target.value }))}
+                    placeholder="Min. 6 characters"
+                    className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm
+                      placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1 flex items-center"><Lock size={16} className="mr-1 text-gray-400" /> Confirm Password</label>
-                  <input type="password" value={passwordForm.confirmPassword} onChange={e => setPasswordForm({...passwordForm, confirmPassword: e.target.value})} placeholder="Leave blank to keep current" className="w-full px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all" />
+                  <label className="block text-sm text-gray-400 mb-1.5">Confirm Password</label>
+                  <input
+                    type="password"
+                    value={passwordForm.confirmPassword}
+                    onChange={e => setPasswordForm(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                    placeholder="Repeat password"
+                    className="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 text-sm
+                      placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition"
+                  />
                 </div>
               </div>
+            </Card>
 
-              <div className="flex justify-end pt-6">
-                <Button type="submit" className="px-8">Save Changes</Button>
-              </div>
-            </form>
-          </Card>
+            {/* Submit */}
+            <div className="flex justify-end">
+              <Button type="submit" variant="primary" className="px-6">
+                <CheckCircle className="w-4 h-4 mr-1.5" />
+                Save Profile
+              </Button>
+            </div>
+          </form>
         </div>
       </div>
-
     </div>
   );
 }
