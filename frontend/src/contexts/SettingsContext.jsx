@@ -26,11 +26,6 @@ export const SettingsProvider = ({ children }) => {
   // Fetch settings from API
   const fetchSettings = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setLoading(false);
-        return;
-      }
       const res = await api.get('/settings');
       setSettings(res.data);
     } catch (error) {

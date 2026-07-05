@@ -10,27 +10,11 @@ const api = axios.create({
   },
 });
 
-// Request interceptor - Automatically attach JWT token
-api.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-// Response interceptor - Handle unauthorized access & network errors
+// Response interceptor - Handle network errors
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401 && window.location.pathname !== '/login') {
-      localStorage.removeItem("token");
-      toast.error("Session expired. Please login again.");
-      window.location.href = "/login";
-    } else if (!error.response) {
+    if (!error.response) {
       // Network failure / Cannot connect to server
       toast.error("Cannot connect to server.");
     }

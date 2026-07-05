@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, 
   CheckSquare, 
@@ -9,7 +9,6 @@ import {
   PieChart, 
   Menu, 
   X,
-  LogOut,
   Settings,
   UserCircle,
   CalendarDays,
@@ -21,13 +20,7 @@ import GlobalSearch from '../components/GlobalSearch';
 
 export default function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const navigate = useNavigate();
   const location = useLocation();
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
-  };
 
   const navItems = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -120,15 +113,6 @@ export default function MainLayout() {
           })}
         </div>
 
-        <div className="p-4 border-t border-gray-50">
-          <button 
-            onClick={handleLogout}
-            className="flex w-full items-center px-4 py-3.5 text-gray-600 hover:bg-danger/10 hover:text-danger rounded-xl transition-colors group"
-          >
-            <LogOut size={20} className="mr-4 text-gray-400 group-hover:text-danger" />
-            <span className="font-semibold text-sm">Logout</span>
-          </button>
-        </div>
       </aside>
 
       {/* Main Content */}

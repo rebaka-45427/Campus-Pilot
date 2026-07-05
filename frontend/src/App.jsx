@@ -6,7 +6,6 @@ import MainLayout from './layouts/MainLayout';
 import Loader from './components/Loader';
 
 // Lazy loading pages
-const Login = React.lazy(() => import('./pages/Login'));
 const Dashboard = React.lazy(() => import('./pages/Dashboard'));
 const Tasks = React.lazy(() => import('./pages/Tasks'));
 const Attendance = React.lazy(() => import('./pages/Attendance'));
@@ -17,14 +16,6 @@ const Notes = React.lazy(() => import('./pages/Notes'));
 const Analytics = React.lazy(() => import('./pages/Analytics'));
 const Profile = React.lazy(() => import('./pages/Profile'));
 const Settings = React.lazy(() => import('./pages/Settings'));
-
-const ProtectedRoute = ({ children }) => {
-  const token = localStorage.getItem('token');
-  if (!token) {
-    return <Navigate to="/login" replace />;
-  }
-  return children;
-};
 
 export default function App() {
   return (
@@ -42,13 +33,7 @@ export default function App() {
         />
         <Suspense fallback={<Loader fullScreen={true} />}>
           <Routes>
-            <Route path="/login" element={<Login />} />
-            
-            <Route path="/" element={
-              <ProtectedRoute>
-                <MainLayout />
-              </ProtectedRoute>
-            }>
+            <Route path="/" element={<MainLayout />}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="tasks" element={<Tasks />} />

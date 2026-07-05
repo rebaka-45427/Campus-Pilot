@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { UserCircle, Mail, School, Building, Calendar, Lock, LogOut, CheckCircle, BookOpen, GraduationCap, AlertCircle } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { UserCircle, Mail, School, Building, Calendar, Lock, CheckCircle, BookOpen, GraduationCap, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Card from '../components/Card';
 import Button from '../components/Button';
@@ -9,7 +8,6 @@ import Loader from '../components/Loader';
 import api from '../services/api';
 
 export default function Profile() {
-  const navigate = useNavigate();
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
   const [user, setUser] = useState({
@@ -39,11 +37,19 @@ export default function Profile() {
     try {
       setIsLoading(true);
       setIsError(false);
-      const [userRes, analyticsRes] = await Promise.all([
-        api.get('/users/me'),
-        api.get('/analytics')
-      ]);
-      setUser(userRes.data);
+      
+      const currentUser = {
+        id: 1,
+        username: "Rebaka Jesi",
+        email: "rebaka@example.com",
+        college: "Example University",
+        department: "Computer Science",
+        year: "Senior"
+      };
+      
+      const analyticsRes = await api.get('/analytics');
+      
+      setUser(currentUser);
       const data = analyticsRes.data.stats;
       setStats({
         completedTasks: data.completedTasks,
@@ -69,18 +75,12 @@ export default function Profile() {
         payload.password = passwordForm.password;
       }
       
-      const res = await api.put('/users/me', payload);
-      setUser(res.data);
+      setUser(payload);
       setPasswordForm({ password: '', confirmPassword: '' });
       toast.success('Profile updated successfully');
     } catch (error) {
       toast.error('Failed to update profile');
     }
-  };
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
   };
 
   if (isLoading) {
@@ -131,9 +131,6 @@ export default function Profile() {
             </div>
           </Card>
           
-          <Button variant="danger" className="w-full" onClick={handleLogout}>
-            <LogOut size={20} className="mr-2" /> Logout
-          </Button>
         </div>
 
         <div className="md:col-span-2">
