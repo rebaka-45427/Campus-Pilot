@@ -101,19 +101,58 @@ def seed_admin():
 seed_admin()
 
 @app.post("/token", response_model=schemas.Token)
-def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.username == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.password):
+def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db)
+):
+    print("=" * 60)
+    print("LOGIN REQUEST")
+    print("Username:", form_data.username)
+    print("Password Length:", len(form_data.password))
+    print("Password:", form_data.password)
+
+    user = db.query(models.User).filter(
+        models.User.username == form_data.username
+    ).first()
+
+    if user is None:
+        print("User not found")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token_expires = timedelta(minutes=config.settings.access_token_expire_minutes)
-    access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+
+    print("Stored Hash Length:", len(user.password))
+    print("Stored Hash:", user.password)
+
+    try:
+        valid = verify_password(form_data.password, user.password)
+        print("Password Valid:", valid)
+    except Exception as e:
+        print("VERIFY ERROR:", str(e))
+        raise
+
+    if not valid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token_expires = timedelta(
+        minutes=config.settings.access_token_expire_minutes
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+
+    access_token = create_access_token(
+        data={"sub": user.username},
+        expires_delta=access_token_expires,
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
 
 # --- Users / Profile ---
 @app.get("/users/me", response_model=schemas.User)
