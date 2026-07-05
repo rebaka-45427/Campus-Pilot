@@ -10,10 +10,13 @@ from jose import JWTError, jwt
 import models, schemas, database, config
 from database import engine, get_db
 
-# Create tables
-models.Base.metadata.create_all(bind=engine)
-
 app = FastAPI(title=config.settings.app_name)
+
+@app.on_event("startup")
+def on_startup():
+    # Create tables
+    models.Base.metadata.create_all(bind=engine)
+    seed_admin()
 
 # CORS
 app.add_middleware(
@@ -79,7 +82,16 @@ def log_activity(db: Session, user_id: int, action: str, entity_type: str, detai
 def seed_admin():
     db = database.SessionLocal()
     admin = db.query(models.User).filter(models.User.username == "Rebaka Jesi").first()
-    if not admin:
+    
+    recreate = False
+    if admin:
+        stored_pw = admin.password
+        if not stored_pw or len(stored_pw) > 72 or not stored_pw.startswith("$2"):
+            recreate = True
+            db.delete(admin)
+            db.commit()
+            
+    if not admin or recreate:
         new_admin = models.User(
             username="Rebaka Jesi",
             password=get_password_hash("password"),
@@ -97,8 +109,6 @@ def seed_admin():
         db.add(settings)
         db.commit()
     db.close()
-
-seed_admin()
 
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(
@@ -123,15 +133,26 @@ def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    print("Stored Hash Length:", len(user.password))
-    print("Stored Hash:", user.password)
+    if user.password is None or len(user.password) > 72 or not user.password.startswith("$2"):
+        raise HTTPException(
+            status_code=401,
+            detail="Stored password is invalid. Reset admin account."
+        )
+
+    print("Stored hash length:", len(user.password))
+    print("Stored hash prefix:", user.password[:10])
+    print("Username:", user.username)
 
     try:
         valid = verify_password(form_data.password, user.password)
         print("Password Valid:", valid)
     except Exception as e:
         print("VERIFY ERROR:", str(e))
-        raise
+        raise HTTPException(
+            status_code=401,
+            detail="Stored password is invalid. Reset admin account.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
     if not valid:
         raise HTTPException(
