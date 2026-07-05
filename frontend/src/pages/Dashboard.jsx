@@ -22,11 +22,12 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [userRes, analyticsRes, activityRes, tasksRes] = await Promise.all([
+        const [userRes, analyticsRes, activityRes, tasksRes, subjectsRes] = await Promise.all([
           api.get('/users/me'),
           api.get('/analytics'),
           api.get('/activity-logs?limit=5'),
-          api.get('/tasks')
+          api.get('/tasks'),
+          api.get('/attendance')
         ]);
         
         setUser(userRes.data);
@@ -47,12 +48,15 @@ export default function Dashboard() {
           });
         }
 
+        const subjectsData = subjectsRes.data;
+        const actualTotalSubjects = Array.isArray(subjectsData) ? subjectsData.length : 0;
+
         setStats({
           pendingTasks: data.pendingTasks,
           completedTasks: data.completedTasks,
           attendance: data.attendanceRate,
           upcomingAssignments: data.totalAssignments - data.completedAssignments,
-          totalSubjects: analyticsRes.data.charts.taskCategories ? analyticsRes.data.charts.taskCategories.length : 0, // Mock for total subjects if not passed, wait we don't have total subjects in stats.
+          totalSubjects: actualTotalSubjects,
           productivityScore: data.productivityScore,
           areaData: areaData,
           recentActivity: activityRes.data
