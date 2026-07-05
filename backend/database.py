@@ -3,8 +3,14 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 from config import settings
 
 # PostgreSQL Engine
+# Render provides URLs starting with postgres:// which SQLAlchemy dropped support for.
+# Replace with postgresql://
+db_url = settings.database_url
+if db_url and db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
+
 engine = create_engine(
-    settings.database_url,
+    db_url,
     pool_pre_ping=True,
     pool_recycle=300
 )

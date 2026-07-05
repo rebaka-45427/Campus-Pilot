@@ -81,34 +81,57 @@ def log_activity(db: Session, user_id: int, action: str, entity_type: str, detai
 # Seed default admin user on startup if doesn't exist
 def seed_admin():
     db = database.SessionLocal()
-    admin = db.query(models.User).filter(models.User.username == "Rebaka Jesi").first()
-    
-    recreate = False
-    if admin:
-        stored_pw = admin.password
-        if not stored_pw or len(stored_pw) > 72 or not stored_pw.startswith("$2"):
-            recreate = True
-            db.delete(admin)
+    try:
+        admin = db.query(models.User).filter(models.User.username == "Rebaka Jesi").first()
+        if admin:
+            print("Admin user already exists. Skipping creation to avoid double hashing.")
+        else:
+            print("Admin user not found. Creating default admin.")
+            # Only hash the original plaintext password once
+            hashed_pwd = get_password_hash("password")
+            new_admin = models.User(
+                username="Rebaka Jesi",
+                password=hashed_pwd,
+                email="rebaka@campuspilot.edu",
+                college="Engineering College",
+                department="Computer Science",
+                year="Senior"
+            )
+            db.add(new_admin)
             db.commit()
             
-    if not admin or recreate:
-        new_admin = models.User(
-            username="Rebaka Jesi",
-            password=get_password_hash("password"),
-            email="rebaka@campuspilot.edu",
-            college="Engineering College",
-            department="Computer Science",
-            year="Senior"
-        )
-        db.add(new_admin)
-        db.commit()
+            # Seed settings for admin
+            db.refresh(new_admin)
+            settings_obj = models.Setting(user_id=new_admin.id)
+            db.add(settings_obj)
+            db.commit()
+    except Exception as e:
+        print(f"Error during startup seed: {e}")
+    finally:
+        db.close()
+
+def authenticate_user(db: Session, username: str, password: str):
+    user = db.query(models.User).filter(models.User.username == username).first()
+    if not user:
+        return False
+    
+    # Safety Check: Prevent bcrypt 72 byte limit crash
+    if len(password) > 72:
+        print("Authentication failed: Password exceeds bcrypt 72 byte limit.")
+        return False
         
-        # Seed settings for admin
-        db.refresh(new_admin)
-        settings = models.Setting(user_id=new_admin.id)
-        db.add(settings)
-        db.commit()
-    db.close()
+    try:
+        # verify_password handles the hash comparison securely
+        if not verify_password(password, user.password):
+            return False
+    except ValueError as e:
+        print(f"Bcrypt verification failed (possibly corrupt hash): {e}")
+        return False
+    except Exception as e:
+        print(f"Unexpected authentication error: {e}")
+        return False
+        
+    return user
 
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(
@@ -118,43 +141,12 @@ def login_for_access_token(
     print("=" * 60)
     print("LOGIN REQUEST")
     print("Username:", form_data.username)
-    print("Password Length:", len(form_data.password))
-    print("Password:", form_data.password)
-
-    user = db.query(models.User).filter(
-        models.User.username == form_data.username
-    ).first()
-
-    if user is None:
-        print("User not found")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if user.password is None or len(user.password) > 72 or not user.password.startswith("$2"):
-        raise HTTPException(
-            status_code=401,
-            detail="Stored password is invalid. Reset admin account."
-        )
-
-    print("Stored hash length:", len(user.password))
-    print("Stored hash prefix:", user.password[:10])
-    print("Username:", user.username)
-
-    try:
-        valid = verify_password(form_data.password, user.password)
-        print("Password Valid:", valid)
-    except Exception as e:
-        print("VERIFY ERROR:", str(e))
-        raise HTTPException(
-            status_code=401,
-            detail="Stored password is invalid. Reset admin account.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    if not valid:
+    
+    # Do NOT hash during login here. authenticate_user uses verify_password
+    user = authenticate_user(db, form_data.username, form_data.password)
+    
+    if not user:
+        print("Login Failed: Incorrect username or password")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -183,7 +175,17 @@ def read_users_me(current_user: models.User = Depends(get_current_user)):
 @app.put("/users/me", response_model=schemas.User)
 def update_user_me(user_update: schemas.UserUpdate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if user_update.password:
-        current_user.password = get_password_hash(user_update.password)
+        # Prevent hashing an already hashed password (bcrypt hashes start with $2 and are exactly 60 chars)
+        if user_update.password.startswith("$2") and len(user_update.password) == 60:
+            print("Warning: Received already hashed password during update. Skipping re-hash.")
+            pass # Keep existing password, do not double hash
+        elif len(user_update.password) > 72:
+            print("Update failed: Provided password exceeds 72 bytes")
+            raise HTTPException(status_code=400, detail="Password cannot exceed 72 bytes")
+        else:
+            # Only hash once
+            current_user.password = get_password_hash(user_update.password)
+            
     current_user.email = user_update.email
     current_user.college = user_update.college
     current_user.department = user_update.department
